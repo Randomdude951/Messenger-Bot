@@ -1,7 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const fetch = require('node-fetch');
 require('dotenv').config();
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,31 +21,39 @@ app.get('/webhook', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('✅ Webhook verified!');
-    res.status(200).send(challenge);
-  } else {
-    console.warn('❌ Webhook verification failed');
-    res.sendStatus(403);
+  if (mode && token) {
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log('✅ Webhook verified!');
+      res.status(200).send(challenge);
+    } else {
+      console.warn('❌ Webhook verification failed');
+      res.sendStatus(403);
+    }
   }
 });
 
-// Message handling
-app.post('/webhook', (req, res) => {
+// Handle incoming messages
+app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'page') {
-    body.entry.forEach(entry => {
-      const event = entry.messaging[0];
-      const senderId = event.sender.id;
+    for (const entry of body.entry) {
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
 
-      if (event.message && event.message.text) {
-        const messageText = event.message.text;
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const responseText = 'Hi there! This is a test auto-reply.';
 
-        console.log(`📩 Message from ${senderId}: ${messageText}`);
-        sendTextMessage(senderId, `You said: "${messageText}"`);
+        await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: { id: senderId },
+            message: { text: responseText },
+          }),
+        });
       }
-    });
+    }
 
     res.status(200).send('EVENT_RECEIVED');
   } else {
@@ -53,22 +61,5 @@ app.post('/webhook', (req, res) => {
   }
 });
 
-function sendTextMessage(recipientId, text) {
-  const requestBody = {
-    recipient: { id: recipientId },
-    message: { text }
-  };
-
-  fetch(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody)
-  })
-    .then(res => res.json())
-    .then(data => console.log('✅ Message sent:', data))
-    .catch(err => console.error('❌ Failed to send message:', err));
-}
-
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
 
