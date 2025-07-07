@@ -10,65 +10,94 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
 app.use(bodyParser.json());
 
-// Health check
-app.get('/', (req, res) => {
-  res.send('Messenger bot is running');
-});
+// Temporary in-memory user state store
+const userStates = {};
 
-// Verify webhook
+// Define your questions here
+const questions = [
+  "Hey! 👋 Thanks for reaching out. What's your full name?",
+  "Great, what's your address?",
+  "What kind of project are you looking for? (e.g., fence, deck, windows)",
+  "When are you hoping to get started?",
+  "What's the best phone number to reach you at?"
+];
+
+// Handle webhook verification
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode && token === VERIFY_TOKEN) {
-    res.status(200).send(challenge);
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('✅ Webhook verified');
+    return res.status(200).send(challenge);
   } else {
-    res.sendStatus(403);
+    return res.sendStatus(403);
   }
 });
 
-// Handle messages
+// Handle incoming messages
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'page') {
     for (const entry of body.entry) {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
+      for (const messagingEvent of entry.messaging) {
+        const senderId = messagingEvent.sender.id;
 
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const response = {
-          recipient: { id: senderId },
-          message: { text: 'Hi there! This is a test auto-reply.' }
-        };
+        // Initialize state if new user
+        if (!userStates[senderId]) {
+          userStates[senderId] = { step: 0, answers: [] };
+        }
 
-        try {
-          await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(response)
-          });
-        } catch (err) {
-          console.error('Failed to send message:', err);
+        // Check for user response
+        if (messagingEvent.message && messagingEvent.message.text) {
+          const userMessage = messagingEvent.message.text;
+          const userData = userStates[senderId];
+
+          // Save answer from previous question
+          if (userData.step > 0) {
+            userData.answers.push(userMessage);
+          }
+
+          // If we have more questions, ask next
+          if (userData.step < questions.length) {
+            const nextQuestion = questions[userData.step];
+            userData.step += 1;
+            await sendMessage(senderId, nextQuestion);
+          } else {
+            // All done
+            console.log("✅ Final data for user:", userData.answers);
+            await sendMessage(senderId, "Thanks! We'll be in touch soon. 👍");
+            // TODO: Save userData.answers to Google Sheets or CRM
+
+            // Reset for possible future restart
+            delete userStates[senderId];
+          }
         }
       }
     }
-
-    res.status(200).send('EVENT_RECEIVED');
+    res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
 
-// Start server
+// Send message function
+async function sendMessage(recipientId, text) {
+  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: { text: text }
+    })
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
-
-
-
 
 
 
