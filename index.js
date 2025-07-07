@@ -97,7 +97,7 @@ app.post('/webhook', async (req, res) => {
         if (guessedService) {
           handleServiceFlow(senderId, guessedService);
         } else {
-          sendText(senderId, 'Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)');
+          sendText(senderId, 'Hi! I\'m here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)');
         }
       }
     }
