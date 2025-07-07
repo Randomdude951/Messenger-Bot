@@ -39,7 +39,7 @@ const handleMessage = async (senderId, messageText) => {
   switch (state.step) {
     case 'initial': {
       const match = stringSimilarity.findBestMatch(text, SERVICE_KEYWORDS);
-      if (match.bestMatch.rating > 0.5) {
+      if (match.bestMatch.rating > 0.3) {
         const service = match.bestMatch.target;
         userState[senderId] = { service, step: 'repair_replace' };
         return sendText(senderId, `Are you looking to repair or replace your ${service}?`);
