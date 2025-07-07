@@ -13,6 +13,8 @@ app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 
+const YES_NO_KEYWORDS = ['yes', 'no'];
+
 const userState = {};
 
 const sendText = async (senderId, text) => {
@@ -24,6 +26,11 @@ const sendText = async (senderId, text) => {
       message: { text: text }
     })
   });
+};
+
+const getBestMatch = (input, options) => {
+  const match = stringSimilarity.findBestMatch(input.trim().toLowerCase(), options);
+  return match.bestMatch.rating > 0.4 ? match.bestMatch.target : null;
 };
 
 const handleMessage = async (senderId, messageText) => {
@@ -38,9 +45,8 @@ const handleMessage = async (senderId, messageText) => {
 
   switch (state.step) {
     case 'initial': {
-      const match = stringSimilarity.findBestMatch(text, SERVICE_KEYWORDS);
-      if (match.bestMatch.rating > 0.3) {
-        const service = match.bestMatch.target;
+      const service = getBestMatch(text, SERVICE_KEYWORDS);
+      if (service) {
         userState[senderId] = { service, step: 'repair_replace' };
         return sendText(senderId, `Are you looking to repair or replace your ${service}?`);
       }
@@ -48,14 +54,14 @@ const handleMessage = async (senderId, messageText) => {
     }
 
     case 'repair_replace': {
-      const intent = text.includes('repair') ? 'repair' : text.includes('replace') ? 'replace' : null;
+      const intent = getBestMatch(text, ['repair', 'replace']);
       if (!intent) return sendText(senderId, "Please type either 'repair' or 'replace'.");
 
       const { service } = state;
       const nextState = { service, intent };
 
       if (intent === 'repair') {
-        if (service === 'windows' || service === 'doors' || service === 'deck' || service === 'roofing' || service === 'gutters') {
+        if (['windows', 'doors', 'deck', 'roofing', 'gutters'].includes(service)) {
           delete userState[senderId];
           return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
         }
@@ -89,12 +95,16 @@ const handleMessage = async (senderId, messageText) => {
     }
 
     case 'fence_repair_quote': {
-      if (text.includes('yes')) {
+      const decision = getBestMatch(text, YES_NO_KEYWORDS);
+      if (decision === 'yes') {
         userState[senderId] = { ...state, step: 'fence_repair_part' };
         return sendText(senderId, "Are you repairing posts or panels?");
+      } else if (decision === 'no') {
+        delete userState[senderId];
+        return sendText(senderId, "Understood! Let us know if you'd like help with a replacement instead.");
+      } else {
+        return sendText(senderId, "Would you like to proceed with a $849 minimum repair? (Yes/No)");
       }
-      delete userState[senderId];
-      return sendText(senderId, "Understood! Let us know if you'd like help with a replacement instead.");
     }
 
     case 'fence_repair_part':
@@ -121,13 +131,15 @@ const handleMessage = async (senderId, messageText) => {
       userState[senderId] = { ...state, step: 'door_quantity' };
       return sendText(senderId, "Great. How many doors are you replacing?");
 
-    case 'deck_type':
-      if (text.includes('repair')) {
+    case 'deck_type': {
+      const type = getBestMatch(text, ['replace', 'new construction', 'resurface', 'repair']);
+      if (type === 'repair') {
         delete userState[senderId];
         return sendText(senderId, "Unfortunately we do not offer deck repairs, but we’d love to help with new builds or replacements!");
       }
       userState[senderId] = { ...state, step: 'deck_material' };
       return sendText(senderId, "What material are you thinking of? (Wood or Composite)");
+    }
 
     case 'deck_material':
       userState[senderId] = { ...state, step: 'timeline' };
@@ -137,17 +149,21 @@ const handleMessage = async (senderId, messageText) => {
       userState[senderId] = { ...state, step: 'fence_length' };
       return sendText(senderId, "Approximately how many linear feet of fencing do you need?");
 
-    case 'roof_type':
-      if (text.includes('cedar')) {
+    case 'roof_type': {
+      const roofType = getBestMatch(text, ['asphalt', 'metal', 'cedar shingle']);
+      if (roofType === 'cedar shingle') {
         delete userState[senderId];
         return sendText(senderId, "We currently don’t offer cedar shingle installations, but we’d love to help with asphalt or metal options.");
       }
       userState[senderId] = { ...state, step: 'roof_gutters' };
       return sendText(senderId, "Would you like new gutters installed as well? (Yes/No)");
+    }
 
-    case 'roof_gutters':
+    case 'roof_gutters': {
+      const decision = getBestMatch(text, YES_NO_KEYWORDS);
       userState[senderId] = { ...state, step: 'timeline' };
       return sendText(senderId, "Great! How soon are you looking to move forward?");
+    }
   }
 };
 
@@ -179,6 +195,4 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-
 
