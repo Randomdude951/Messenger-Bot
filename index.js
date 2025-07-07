@@ -109,7 +109,12 @@ const handleMessage = async (senderId, messageText) => {
 
     case 'fence_repair_part':
       userState[senderId] = { ...state, step: 'fence_repair_count' };
-      return sendText(senderId, `How many ${text} need work?`);
+      //return sendText(senderId, `How many ${text} need work?`);
+      const part = getBestMatch(text, ['posts', 'panels']);
+      if (!part) return sendText(senderId, "Are you repairing posts or panels?");
+      userState[senderId] = { ...state, step: 'fence_repair_count', part };
+      return sendText(senderId, `How many ${part} need work?`);
+
 
     case 'fence_repair_count':
     case 'window_quantity':
