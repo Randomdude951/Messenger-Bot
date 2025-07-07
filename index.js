@@ -13,7 +13,11 @@ app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 
-const YES_NO_KEYWORDS = ['yes', 'no'];
+const YES_NO_KEYWORDS = [
+  'yes', 'no',
+  'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative',
+  'nah', 'nope', 'negative'
+];
 
 const userState = {};
 
@@ -31,6 +35,16 @@ const sendText = async (senderId, text) => {
 const getBestMatch = (input, options) => {
   const match = stringSimilarity.findBestMatch(input.trim().toLowerCase(), options);
   return match.bestMatch.rating > 0.4 ? match.bestMatch.target : null;
+};
+
+const interpretYesNo = (input) => {
+  const response = getBestMatch(input, YES_NO_KEYWORDS);
+  if (!response) return null;
+  return ['yes', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative'].includes(response)
+    ? 'yes'
+    : ['no', 'nah', 'nope', 'negative'].includes(response)
+      ? 'no'
+      : null;
 };
 
 const handleMessage = async (senderId, messageText) => {
@@ -95,7 +109,7 @@ const handleMessage = async (senderId, messageText) => {
     }
 
     case 'fence_repair_quote': {
-      const decision = getBestMatch(text, YES_NO_KEYWORDS);
+      const decision = interpretYesNo(text);
       if (decision === 'yes') {
         userState[senderId] = { ...state, step: 'fence_repair_part' };
         return sendText(senderId, "Are you repairing posts or panels?");
@@ -109,12 +123,7 @@ const handleMessage = async (senderId, messageText) => {
 
     case 'fence_repair_part':
       userState[senderId] = { ...state, step: 'fence_repair_count' };
-      //return sendText(senderId, `How many ${text} need work?`);
-      const part = getBestMatch(text, ['posts', 'panels']);
-      if (!part) return sendText(senderId, "Are you repairing posts or panels?");
-      userState[senderId] = { ...state, step: 'fence_repair_count', part };
-      return sendText(senderId, `How many ${part} need work?`);
-
+      return sendText(senderId, `How many ${text} need work?`);
 
     case 'fence_repair_count':
     case 'window_quantity':
@@ -165,7 +174,7 @@ const handleMessage = async (senderId, messageText) => {
     }
 
     case 'roof_gutters': {
-      const decision = getBestMatch(text, YES_NO_KEYWORDS);
+      const decision = interpretYesNo(text);
       userState[senderId] = { ...state, step: 'timeline' };
       return sendText(senderId, "Great! How soon are you looking to move forward?");
     }
@@ -200,4 +209,3 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
