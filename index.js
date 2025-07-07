@@ -47,6 +47,11 @@ const interpretYesNo = (input) => {
       : null;
 };
 
+const getFencePart = (input) => {
+  return getBestMatch(input, ['posts', 'panels']) || input;
+};
+
+
 const handleMessage = async (senderId, messageText) => {
   const text = messageText.trim().toLowerCase();
 
@@ -120,10 +125,12 @@ const handleMessage = async (senderId, messageText) => {
         return sendText(senderId, "Would you like to proceed with a $849 minimum repair? (Yes/No)");
       }
     }
-
-    case 'fence_repair_part':
-      userState[senderId] = { ...state, step: 'fence_repair_count' };
-      return sendText(senderId, `How many ${text} need work?`);
+      
+    case 'fence_repair_part': {
+      const part = getFencePart(text);
+      userState[senderId] = { ...state, step: 'fence_repair_count', detail: part };
+      return sendText(senderId, `How many ${part} need work?`);
+    }
 
     case 'fence_repair_count':
     case 'window_quantity':
