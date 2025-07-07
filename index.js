@@ -11,17 +11,12 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
 app.use(bodyParser.json());
 
-const serviceKeywords = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
+const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 
-function detectService(message) {
-  const match = stringSimilarity.findBestMatch(message.toLowerCase(), serviceKeywords);
-  return match.bestMatch.rating > 0.5 ? match.bestMatch.target : null;
-}
+const userState = {};
 
-const userStates = {};
-
-function sendText(senderId, text) {
-  return fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+const sendText = async (senderId, text) => {
+  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -29,76 +24,152 @@ function sendText(senderId, text) {
       message: { text: text }
     })
   });
-}
+};
 
-function handleServiceFlow(senderId, service) {
-  userStates[senderId] = { step: 'serviceType', service: service };
+const handleMessage = async (senderId, messageText) => {
+  const text = messageText.trim().toLowerCase();
 
-  switch (service) {
-    case 'fence':
-      sendText(senderId, 'Are you looking to repair or replace your fence?');
-      break;
-    case 'windows':
-      sendText(senderId, 'Are you looking to repair or replace your windows?');
-      break;
-    case 'doors':
-      sendText(senderId, 'Are you looking to repair or replace your doors?');
-      break;
-    case 'deck':
-      sendText(senderId, 'Are you building a new deck, resurfacing, or replacing an existing one?');
-      break;
-    case 'roofing':
-    case 'gutters':
-      sendText(senderId, `Great! Let’s get started with your ${service} project. When are you hoping to get started?`);
-      break;
-    default:
-      sendText(senderId, 'Let’s get started. What kind of service are you interested in?');
+  if (['exit', 'cancel', 'stop', 'nevermind'].includes(text)) {
+    delete userState[senderId];
+    return sendText(senderId, "No problem! If you need anything in the future, just message us again. Take care!");
   }
-}
 
-app.get('/', (req, res) => {
-  res.send('Messenger bot is running');
-});
+  const state = userState[senderId] || { step: 'initial' };
+
+  switch (state.step) {
+    case 'initial': {
+      const match = stringSimilarity.findBestMatch(text, SERVICE_KEYWORDS);
+      if (match.bestMatch.rating > 0.5) {
+        const service = match.bestMatch.target;
+        userState[senderId] = { service, step: 'repair_replace' };
+        return sendText(senderId, `Are you looking to repair or replace your ${service}?`);
+      }
+      return sendText(senderId, "Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
+    }
+
+    case 'repair_replace': {
+      const intent = text.includes('repair') ? 'repair' : text.includes('replace') ? 'replace' : null;
+      if (!intent) return sendText(senderId, "Please type either 'repair' or 'replace'.");
+
+      const { service } = state;
+      const nextState = { service, intent };
+
+      if (intent === 'repair') {
+        if (service === 'windows' || service === 'doors' || service === 'deck' || service === 'roofing' || service === 'gutters') {
+          delete userState[senderId];
+          return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
+        }
+        if (service === 'fence') {
+          userState[senderId] = { ...nextState, step: 'fence_repair_quote' };
+          return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
+        }
+      } else if (intent === 'replace') {
+        switch (service) {
+          case 'windows':
+            userState[senderId] = { ...nextState, step: 'window_quantity' };
+            return sendText(senderId, "How many windows would you like replaced?");
+          case 'doors':
+            userState[senderId] = { ...nextState, step: 'door_type' };
+            return sendText(senderId, "Are they interior or exterior doors?");
+          case 'deck':
+            userState[senderId] = { ...nextState, step: 'deck_type' };
+            return sendText(senderId, "Is this a replacement, new construction, or resurface project?");
+          case 'fence':
+            userState[senderId] = { ...nextState, step: 'fence_type' };
+            return sendText(senderId, "What type of fence are you interested in? (Wood, Chain-link, Vinyl, Decorative Metal)");
+          case 'roofing':
+            userState[senderId] = { ...nextState, step: 'roof_type' };
+            return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
+          case 'gutters':
+            userState[senderId] = { ...nextState, step: 'gutter_feet' };
+            return sendText(senderId, "Roughly how many feet of gutters do you need replaced?");
+        }
+      }
+      break;
+    }
+
+    case 'fence_repair_quote': {
+      if (text.includes('yes')) {
+        userState[senderId] = { ...state, step: 'fence_repair_part' };
+        return sendText(senderId, "Are you repairing posts or panels?");
+      }
+      delete userState[senderId];
+      return sendText(senderId, "Understood! Let us know if you'd like help with a replacement instead.");
+    }
+
+    case 'fence_repair_part':
+      userState[senderId] = { ...state, step: 'fence_repair_count' };
+      return sendText(senderId, `How many ${text} need work?`);
+
+    case 'fence_repair_count':
+    case 'window_quantity':
+    case 'door_quantity':
+    case 'gutter_feet':
+    case 'fence_length':
+      userState[senderId] = { ...state, step: 'timeline' };
+      return sendText(senderId, "How soon are you looking to get this done?");
+
+    case 'timeline':
+      userState[senderId] = { ...state, step: 'schedule' };
+      return sendText(senderId, "Awesome. What day works best for a consultation or install?");
+
+    case 'schedule':
+      delete userState[senderId];
+      return sendText(senderId, "You're all set! We'll follow up shortly to confirm your appointment. Thanks for reaching out! 🙌");
+
+    case 'door_type':
+      userState[senderId] = { ...state, step: 'door_quantity' };
+      return sendText(senderId, "Great. How many doors are you replacing?");
+
+    case 'deck_type':
+      if (text.includes('repair')) {
+        delete userState[senderId];
+        return sendText(senderId, "Unfortunately we do not offer deck repairs, but we’d love to help with new builds or replacements!");
+      }
+      userState[senderId] = { ...state, step: 'deck_material' };
+      return sendText(senderId, "What material are you thinking of? (Wood or Composite)");
+
+    case 'deck_material':
+      userState[senderId] = { ...state, step: 'timeline' };
+      return sendText(senderId, "And how soon would you like the project started?");
+
+    case 'fence_type':
+      userState[senderId] = { ...state, step: 'fence_length' };
+      return sendText(senderId, "Approximately how many linear feet of fencing do you need?");
+
+    case 'roof_type':
+      if (text.includes('cedar')) {
+        delete userState[senderId];
+        return sendText(senderId, "We currently don’t offer cedar shingle installations, but we’d love to help with asphalt or metal options.");
+      }
+      userState[senderId] = { ...state, step: 'roof_gutters' };
+      return sendText(senderId, "Would you like new gutters installed as well? (Yes/No)");
+
+    case 'roof_gutters':
+      userState[senderId] = { ...state, step: 'timeline' };
+      return sendText(senderId, "Great! How soon are you looking to move forward?");
+  }
+};
+
+app.get('/', (req, res) => res.send('Messenger bot is running'));
 
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode && token) {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('✅ Webhook verified!');
-      res.status(200).send(challenge);
-    } else {
-      console.warn('❌ Webhook verification failed');
-      res.sendStatus(403);
-    }
+  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
   }
+  res.sendStatus(403);
 });
 
 app.post('/webhook', async (req, res) => {
-  const body = req.body;
-  if (body.object === 'page') {
-    for (const entry of body.entry) {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
-
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const messageText = webhookEvent.message.text.trim().toLowerCase();
-
-        if (['exit', 'cancel', 'stop'].includes(messageText)) {
-          sendText(senderId, 'Got it. If you need help in the future, just send a message. 👋');
-          delete userStates[senderId];
-          continue;
-        }
-
-        const guessedService = detectService(messageText);
-
-        if (guessedService) {
-          handleServiceFlow(senderId, guessedService);
-        } else {
-          sendText(senderId, 'Hi! I\'m here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)');
-        }
+  if (req.body.object === 'page') {
+    for (const entry of req.body.entry) {
+      const event = entry.messaging[0];
+      if (event.message && event.sender && event.sender.id) {
+        await handleMessage(event.sender.id, event.message.text || '');
       }
     }
     res.sendStatus(200);
