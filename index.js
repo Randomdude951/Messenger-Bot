@@ -14,7 +14,7 @@ app.use(bodyParser.json());
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 
 const logLead = async (data) => {
-  await fetch('https://script.google.com/macros/s/AKfycbzCfmTJk3bwHdSISmLUBTrSxVtzTOyDSJ0yYKRFyC4CIFe-n3_MkzZzztqJEJQt7vN67g/exec', {
+  await fetch('https://script.google.com/macros/s/AKfycbya3rdULqjJa1GEUudYBhKyai57xNZy6CG8df6US7-T4ghupvAZ_jJSsGF6L4dXb9YJpA/exec', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -165,6 +165,19 @@ const handleMessage = async (senderId, messageText) => {
       delete userState[senderId];
       return sendText(senderId, "You're all set! We'll follow up shortly to confirm your appointment. Thanks for reaching out! 🙌");
 
+      await fetch('https://script.google.com/macros/s/your-apps-script-url/exec', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    userId: senderId,
+    service: state.service,
+    intent: state.intent || '',
+    detail: state.detail || '',
+    message: messageText
+  })
+});
+
+      
     case 'door_type':
       userState[senderId] = { ...state, step: 'door_quantity' };
       return sendText(senderId, "Great. How many doors are you replacing?");
