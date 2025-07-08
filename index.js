@@ -13,14 +13,6 @@ app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 
-const logLead = async (data) => {
-  await fetch('https://script.google.com/macros/s/AKfycbya3rdULqjJa1GEUudYBhKyai57xNZy6CG8df6US7-T4ghupvAZ_jJSsGF6L4dXb9YJpA/exec', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }).catch(console.error);
-};
-
 const YES_NO_KEYWORDS = [
   'yes', 'no',
   'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative',
@@ -38,6 +30,29 @@ const sendText = async (senderId, text) => {
       message: { text: text }
     })
   });
+};
+
+const getUserName = async (senderId) => {
+  try {
+    const res = await fetch(`https://graph.facebook.com/${senderId}?fields=first_name,last_name&access_token=${PAGE_ACCESS_TOKEN}`);
+    const data = await res.json();
+    if (data.first_name && data.last_name) {
+      return `${data.first_name} ${data.last_name}`;
+    } else {
+      return senderId;
+    }
+  } catch (err) {
+    console.error('Failed to fetch user name:', err);
+    return senderId;
+  }
+};
+
+const logLead = async (data) => {
+  await fetch('https://script.google.com/macros/s/AKfycbya3rdULqjJa1GEUudYBhKyai57xNZy6CG8df6US7-T4ghupvAZ_jJSsGF6L4dXb9YJpA/exec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).catch(console.error);
 };
 
 const getBestMatch = (input, options) => {
@@ -58,7 +73,6 @@ const interpretYesNo = (input) => {
 const getFencePart = (input) => {
   return getBestMatch(input, ['posts', 'panels']) || input;
 };
-
 
 const handleMessage = async (senderId, messageText) => {
   const text = messageText.trim().toLowerCase();
@@ -133,7 +147,7 @@ const handleMessage = async (senderId, messageText) => {
         return sendText(senderId, "Would you like to proceed with a $849 minimum repair? (Yes/No)");
       }
     }
-      
+
     case 'fence_repair_part': {
       const part = getFencePart(text);
       userState[senderId] = { ...state, step: 'fence_repair_count', detail: part };
@@ -145,39 +159,27 @@ const handleMessage = async (senderId, messageText) => {
     case 'door_quantity':
     case 'gutter_feet':
     case 'fence_length':
-      userState[senderId] = { ...state, step: 'timeline' };
+      userState[senderId] = { ...state, step: 'timeline', detail: text };
       return sendText(senderId, "How soon are you looking to get this done?");
 
     case 'timeline':
-      userState[senderId] = { ...state, step: 'schedule' };
+      userState[senderId] = { ...state, step: 'schedule', timeline: text };
       return sendText(senderId, "Awesome. What day works best for a consultation or install?");
 
-    case 'schedule':
+    case 'schedule': {
+      const name = await getUserName(senderId);
       await logLead({
-      senderId,
-      service: state.service,
-      intent: state.intent,
-      details: state.detail || '',
-      timeline: text,  // This is user’s response to the "how soon?" question
-      schedule: text
+        userId: name,
+        service: state.service,
+        intent: state.intent,
+        detail: state.detail || '',
+        timeline: state.timeline || '',
+        schedule: text
       });
-      
       delete userState[senderId];
       return sendText(senderId, "You're all set! We'll follow up shortly to confirm your appointment. Thanks for reaching out! 🙌");
+    }
 
-      await fetch('https://script.google.com/macros/s/your-apps-script-url/exec', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    userId: senderId,
-    service: state.service,
-    intent: state.intent || '',
-    detail: state.detail || '',
-    message: messageText
-  })
-});
-
-      
     case 'door_type':
       userState[senderId] = { ...state, step: 'door_quantity' };
       return sendText(senderId, "Great. How many doors are you replacing?");
@@ -193,11 +195,11 @@ const handleMessage = async (senderId, messageText) => {
     }
 
     case 'deck_material':
-      userState[senderId] = { ...state, step: 'timeline' };
+      userState[senderId] = { ...state, step: 'timeline', detail: text };
       return sendText(senderId, "And how soon would you like the project started?");
 
     case 'fence_type':
-      userState[senderId] = { ...state, step: 'fence_length' };
+      userState[senderId] = { ...state, step: 'fence_length', detail: text };
       return sendText(senderId, "Approximately how many linear feet of fencing do you need?");
 
     case 'roof_type': {
@@ -206,7 +208,7 @@ const handleMessage = async (senderId, messageText) => {
         delete userState[senderId];
         return sendText(senderId, "We currently don’t offer cedar shingle installations, but we’d love to help with asphalt or metal options.");
       }
-      userState[senderId] = { ...state, step: 'roof_gutters' };
+      userState[senderId] = { ...state, step: 'roof_gutters', detail: roofType };
       return sendText(senderId, "Would you like new gutters installed as well? (Yes/No)");
     }
 
