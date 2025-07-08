@@ -47,11 +47,11 @@ const getUserName = async (senderId) => {
   }
 };
 
-const logLead = async (data) => {
+const logLead = async (dataArray) => {
   await fetch('https://script.google.com/macros/s/AKfycbya3rdULqjJa1GEUudYBhKyai57xNZy6CG8df6US7-T4ghupvAZ_jJSsGF6L4dXb9YJpA/exec', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+    body: JSON.stringify({values: dataArray )
   }).catch(console.error);
 };
 
@@ -170,13 +170,14 @@ const handleMessage = async (senderId, messageText) => {
       const name = await getUserName(senderId);
       const fullState = userState[senderId] || {};
       await logLead({
-        userId: name,
-        service: fullState.service,
-        intent: fullState.intent,
-        detail: fullState.detail || '',
-        timeline: fullState.timeline || text,
-        schedule: text,
-        zip: fullState.zip || ''
+        name,
+        fullState.service,
+        fullState.intent,
+        fullState.detail || '',
+        '', // Placeholder if Column E is unused
+        fullState.timeline || '',
+        text, // schedule
+        fullState.zip || ''
       });
       delete userState[senderId];
       return sendText(senderId, "You're all set! We'll follow up shortly to confirm your appointment. Thanks for reaching out! 🙌");
