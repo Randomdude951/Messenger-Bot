@@ -51,7 +51,7 @@ const logLead = async (dataArray) => {
   await fetch('https://script.google.com/macros/s/AKfycbya3rdULqjJa1GEUudYBhKyai57xNZy6CG8df6US7-T4ghupvAZ_jJSsGF6L4dXb9YJpA/exec', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({values: dataArray )
+    body: JSON.stringify({values: dataArray })
   }).catch(console.error);
 };
 
