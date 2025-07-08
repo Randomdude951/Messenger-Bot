@@ -89,7 +89,7 @@ const handleMessage = async (senderId, messageText) => {
       const service = getBestMatch(text, SERVICE_KEYWORDS);
       if (service) {
         userState[senderId] = { service, step: 'repair_replace' };
-        return sendText(senderId, `Are you looking to repair or replace your ${service}?`);
+        return sendText(senderId, `Are you looking to repair or replace your ${service}? Also, could you please provide your ZIP code?`);
       }
       return sendText(senderId, "Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
     }
@@ -168,13 +168,15 @@ const handleMessage = async (senderId, messageText) => {
 
     case 'schedule': {
       const name = await getUserName(senderId);
+      const fullState = userState[senderId] || {};
       await logLead({
         userId: name,
-        service: state.service,
-        intent: state.intent,
-        detail: state.detail || '',
-        timeline: state.timeline || '',
-        schedule: text
+        service: fullState.service,
+        intent: fullState.intent,
+        detail: fullState.detail || '',
+        timeline: fullState.timeline || text,
+        schedule: text,
+        zip: fullState.zip || ''
       });
       delete userState[senderId];
       return sendText(senderId, "You're all set! We'll follow up shortly to confirm your appointment. Thanks for reaching out! 🙌");
@@ -238,7 +240,16 @@ app.post('/webhook', async (req, res) => {
     for (const entry of req.body.entry) {
       const event = entry.messaging[0];
       if (event.message && event.sender && event.sender.id) {
-        await handleMessage(event.sender.id, event.message.text || '');
+        const text = event.message.text || '';
+        const senderId = event.sender.id;
+
+        // Check if this looks like a zip code (simple check for 5 digits)
+        if (/^\d{5}$/.test(text)) {
+          userState[senderId] = { ...(userState[senderId] || {}), zip: text };
+          await sendText(senderId, "Thanks! Now back to your request — what type of service do you need help with? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
+        } else {
+          await handleMessage(senderId, text);
+        }
       }
     }
     res.sendStatus(200);
@@ -248,3 +259,4 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
