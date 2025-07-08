@@ -169,7 +169,7 @@ const handleMessage = async (senderId, messageText) => {
     case 'schedule': {
       const name = await getUserName(senderId);
       const fullState = userState[senderId] || {};
-      await logLead({
+      await logLead([
         name,
         fullState.service,
         fullState.intent,
@@ -178,7 +178,7 @@ const handleMessage = async (senderId, messageText) => {
         fullState.timeline || '',
         text, // schedule
         fullState.zip || ''
-      });
+      ]);
       delete userState[senderId];
       return sendText(senderId, "You're all set! We'll follow up shortly to confirm your appointment. Thanks for reaching out! 🙌");
     }
