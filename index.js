@@ -174,7 +174,6 @@ const handleMessage = async (senderId, messageText) => {
         fullState.service,
         fullState.intent,
         fullState.detail || '',
-        '', // Placeholder if Column E is unused
         fullState.timeline || '',
         text, // schedule
         fullState.zip || ''
