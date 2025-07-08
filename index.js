@@ -13,6 +13,14 @@ app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 
+const logLead = async (data) => {
+  await fetch('https://script.google.com/macros/s/AKfycbzCfmTJk3bwHdSISmLUBTrSxVtzTOyDSJ0yYKRFyC4CIFe-n3_MkzZzztqJEJQt7vN67g/exec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).catch(console.error);
+};
+
 const YES_NO_KEYWORDS = [
   'yes', 'no',
   'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative',
@@ -145,6 +153,15 @@ const handleMessage = async (senderId, messageText) => {
       return sendText(senderId, "Awesome. What day works best for a consultation or install?");
 
     case 'schedule':
+      await logLead({
+      senderId,
+      service: state.service,
+      intent: state.intent,
+      details: state.detail || '',
+      timeline: text,  // This is user’s response to the "how soon?" question
+      schedule: text
+      });
+      
       delete userState[senderId];
       return sendText(senderId, "You're all set! We'll follow up shortly to confirm your appointment. Thanks for reaching out! 🙌");
 
