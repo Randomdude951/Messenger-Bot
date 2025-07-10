@@ -48,7 +48,7 @@ const sendBookingButton = async (senderId) => {
               {
                 type: "web_url",
                 url: "https://www.ffexteriorsolutions.com/book-online",
-                title: "📅 Book Now"
+                title: "\ud83d\uddd3 Book Now"
               }
             ]
           }
@@ -99,6 +99,19 @@ const handleMessage = async (senderId, messageText) => {
       );
     }
 
+    case "fence_repair_confirm": {
+      const decision = interpretYesNo(text);
+      delete userState[senderId];
+      if (decision === "yes") {
+        return sendBookingButton(senderId);
+      } else if (decision === "no") {
+        return sendText(senderId, "No worries! Let us know if you change your mind.");
+      } else {
+        userState[senderId] = { ...state };
+        return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
+      }
+    }
+
     case "repair_replace": {
       const intent = getBestMatch(text, ["repair", "replace"]);
       if (!intent) return sendText(senderId, "Please type either 'repair' or 'replace'.");
@@ -112,60 +125,28 @@ const handleMessage = async (senderId, messageText) => {
           return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
         }
         if (service === "fence") {
-          delete userState[senderId];
-          return sendText(senderId, "Fence repairs start at a $849 minimum. If you're interested, please book online:")
-            .then(() => sendBookingButton(senderId));
+          userState[senderId] = { ...nextState, step: "fence_repair_confirm" };
+          return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
         }
       } else if (intent === "replace") {
         switch (service) {
           case "windows":
           case "doors":
+          case "deck":
+          case "fence":
+          case "gutters":
             delete userState[senderId];
             return sendBookingButton(senderId);
-          case "deck":
-            userState[senderId] = { ...nextState, step: "deck_type" };
-            return sendText(senderId, "Is this a replacement, new construction, or resurface project?");
-          case "fence":
-            userState[senderId] = { ...nextState, step: "fence_type" };
-            return sendText(
-              senderId,
-              "What type of fence are you interested in? (Wood, Chain-link, Vinyl, Decorative Metal)"
-            );
           case "roofing":
             userState[senderId] = { ...nextState, step: "roof_type" };
             return sendText(
               senderId,
               "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)"
             );
-          case "gutters":
-            delete userState[senderId];
-            return sendBookingButton(senderId);
         }
       }
       break;
     }
-
-    case "deck_type": {
-      const type = getBestMatch(text, ["replace", "new construction", "resurface", "repair"]);
-      if (type === "repair") {
-        delete userState[senderId];
-        return sendText(
-          senderId,
-          "Unfortunately we do not offer deck repairs, but we’d love to help with new builds or replacements!"
-        );
-      }
-      userState[senderId] = { ...state, step: "deck_material" };
-      return sendText(senderId, "What material are you thinking of? (Wood or Composite)");
-    }
-
-    case "deck_material":
-    case "fence_length":
-      delete userState[senderId];
-      return sendBookingButton(senderId);
-
-    case "fence_type":
-      userState[senderId] = { ...state, step: "fence_length" };
-      return sendText(senderId, "Approximately how many linear feet of fencing do you need?");
 
     case "roof_type": {
       const roofType = getBestMatch(text, ["asphalt", "metal", "cedar shingle"]);
@@ -218,3 +199,4 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
