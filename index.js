@@ -48,7 +48,7 @@ const sendBookingButton = async (senderId) => {
               {
                 type: "web_url",
                 url: "https://www.ffexteriorsolutions.com/book-online",
-                title: "📅 Book Now"
+                title: "\ud83d\uddd3 Book Now"
               }
             ]
           }
@@ -183,17 +183,19 @@ app.post('/webhook', async (req, res) => {
   if (req.body.object === 'page') {
     for (const entry of req.body.entry) {
       const event = entry.messaging[0];
+      const senderId = event.sender && event.sender.id;
 
-      if (event.postback?.referral?.ref === "welcome_ad" || event.referral?.ref === "welcome_ad") {
-        const senderId = event.sender.id;
+      if (!senderId) continue;
+
+      // Handle "Get Started" button
+      if (event.postback?.payload === "GET_STARTED") {
         userState[senderId] = { step: "initial", greeted: false };
         await sendText(senderId, "Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
         return;
       }
 
-      if (event.message && event.sender && event.sender.id) {
-        const text = event.message.text || '';
-        const senderId = event.sender.id;
+      if (event.message?.text) {
+        const text = event.message.text;
 
         if (/^\d{5}$/.test(text)) {
           userState[senderId] = { ...(userState[senderId] || {}), zip: text };
@@ -210,3 +212,4 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
