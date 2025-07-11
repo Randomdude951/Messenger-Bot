@@ -180,6 +180,16 @@ app.post('/webhook', async (req, res) => {
   if (req.body.object === 'page') {
     for (const entry of req.body.entry) {
       const event = entry.messaging[0];
+
+      // Handle referral links (e.g. ?ref=welcome_ad)
+      if (event.postback?.referral?.ref === "welcome_ad" || event.referral?.ref === "welcome_ad") {
+        const senderId = event.sender.id;
+        userState[senderId] = { step: "initial" };
+        await sendText(senderId, "Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
+        return;
+      }
+
+      
       if (event.message && event.sender && event.sender.id) {
         const text = event.message.text || '';
         const senderId = event.sender.id;
