@@ -13,8 +13,9 @@ app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 const YES_NO_KEYWORDS = ['yes', 'no', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative', 'nah', 'nope', 'negative'];
-// ——— NEW: keywords that trigger a hand-off to a human ———
 const HUMAN_KEYWORDS = ['human', 'person', 'agent', 'representative'];
+// catch most “thank(s)” variants
+const THANKS_REGEX = /^(thanks?|thank you|thx|ty)\b/;
 
 const userState = {};
 
@@ -71,7 +72,7 @@ const validZipCodes = new Set([
   "98284" /* Sedro-Woolley */,  
   "98287" /* Silvana */, 
   "98288" /* Skykomish */, 
-  "98290" /* Snohomish */,
+  "98290" /* Snohomish */, 
   "98292" /* Stanwood */, 
   "98293" /* Startup */, 
   "98294" /* Sultan */, 
@@ -86,7 +87,7 @@ const sendText = async (senderId, text) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       recipient: { id: senderId },
-      message: { text: text }
+      message: { text }
     })
   });
 };
@@ -103,13 +104,7 @@ const sendBookingButton = async (senderId) => {
           payload: {
             template_type: "button",
             text: "Perfect! Just click the link to book your free consultation, and we’ll follow up with a quick confirmation call.",
-            buttons: [
-              {
-                type: "web_url",
-                url: "https://www.ffexteriorsolutions.com/book-online",
-                title: "📅 Book Now"
-              }
-            ]
+            buttons: [{ type: "web_url", url: "https://www.ffexteriorsolutions.com/book-online", title: "📅 Book Now" }]
           }
         }
       }
@@ -119,58 +114,78 @@ const sendBookingButton = async (senderId) => {
 };
 
 const getBestMatch = (input, options) => {
-  const match = stringSimilarity.findBestMatch(input.trim().toLowerCase(), options);
-  return match.bestMatch.rating > 0.4 ? match.bestMatch.target : null;
+  const m = stringSimilarity.findBestMatch(input.trim().toLowerCase(), options);
+  return m.bestMatch.rating > 0.4 ? m.bestMatch.target : null;
 };
 
 const interpretYesNo = (input) => {
-  const response = getBestMatch(input, YES_NO_KEYWORDS);
-  if (!response) return null;
-  return ['yes', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative'].includes(response)
-    ? 'yes'
-    : ['no', 'nah', 'nope', 'negative'].includes(response)
-      ? 'no'
-      : null;
+  const r = getBestMatch(input, YES_NO_KEYWORDS);
+  if (!r) return null;
+  return ['yes','yeah','ye','yup','ok','okay','sure','affirmative'].includes(r) ? 'yes'
+       : ['no','nah','nope','negative'].includes(r)        ? 'no'
+       : null;
 };
 
 const handleMessage = async (senderId, messageText) => {
   const text = messageText.trim().toLowerCase();
+  const state = userState[senderId] || {};
 
-  // ——— NEW: human hand-off check ———
-  if (HUMAN_KEYWORDS.some(keyword => text.includes(keyword))) {
-    delete userState[senderId];
+  // 1) waiting for them to *give* you their contact info
+  if (state.step === 'collect_contact') {
+    // ignore a “thanks” reply
+    if (THANKS_REGEX.test(text)) return;
+    // otherwise treat it as their email/phone
+    await sendText(senderId, "Thank you! A person will reach out to you shortly.");
+    // move to “done” so we only ignore one “thanks”
+    userState[senderId] = { step: 'handoff_done' };
+    return;
+  }
+
+  // 2) after final confirmation, ignore one “thanks”, then reset and reprocess
+  if (state.step === 'handoff_done') {
+    if (THANKS_REGEX.test(text)) {
+      return; 
+    } else {
+      delete userState[senderId];
+      // re-run the handler on whatever they just said
+      return handleMessage(senderId, messageText);
+    }
+  }
+
+  // 3) if they ask for a human, switch into collect_contact
+  if (HUMAN_KEYWORDS.some(k => text.includes(k))) {
+    userState[senderId] = { step: 'collect_contact' };
     return sendText(
       senderId,
-      "Please provide an email or phone number and a person will reach out to you shortly."
+      "Please provide an email or phone number, and a person will reach out to you shortly."
     );
   }
 
+  // 4) your existing “exit” logic + zip → service → booking flow…
   if (["exit", "cancel", "stop", "nevermind"].includes(text)) {
     delete userState[senderId];
     return sendText(senderId, "No problem! If you need anything in the future, just message us again. Take care!");
   }
 
-  let state = userState[senderId] || { step: "ask_zip" };
+  let cur = state.step ? state : { step: "ask_zip" };
 
-  if (state.step === "ask_zip") {
+  if (cur.step === "ask_zip") {
     if (!/^\d{5}$/.test(text)) {
       return sendText(senderId, "Hi! I’m here to help. Could you please send your 5-digit ZIP code so I can check if we serve your area?");
     }
-
     if (!validZipCodes.has(text)) {
       delete userState[senderId];
       return sendText(senderId, "Unfortunately, we’re not servicing that area at this time. Please check back later!");
     }
-
-    userState[senderId] = { ...state, zip: text, step: "initial", greeted: false };
+    userState[senderId] = { ...cur, zip: text, step: "initial", greeted: false };
     return sendText(senderId, "Great! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
   }
 
-  switch (state.step) {
+  switch (cur.step) {
     case "initial": {
       const service = getBestMatch(text, SERVICE_KEYWORDS);
       if (service) {
-        userState[senderId] = { ...state, service, step: "repair_replace", greeted: true };
+        userState[senderId] = { ...cur, service, step: "repair_replace", greeted: true };
         return sendText(senderId, `Are you looking to repair or replace your ${service}?`);
       }
       return sendText(senderId, "What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
@@ -180,21 +195,17 @@ const handleMessage = async (senderId, messageText) => {
       const intent = getBestMatch(text, ["repair", "replace"]);
       if (!intent) return sendText(senderId, "Please type either 'repair' or 'replace'.");
 
-      const { service } = state;
-      const nextState = { ...state, intent };
-
       if (intent === "repair") {
-        if (["windows", "doors", "deck", "roofing", "gutters"].includes(service)) {
+        if (["windows","doors","deck","roofing","gutters"].includes(cur.service)) {
           delete userState[senderId];
-          return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
+          return sendText(senderId, `Unfortunately, we do not offer ${cur.service} repairs at this time.`);
         }
-
-        if (service === "fence") {
-          userState[senderId] = { ...nextState, step: "fence_repair_confirm" };
+        if (cur.service === "fence") {
+          userState[senderId] = { ...cur, intent, step: "fence_repair_confirm" };
           return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
         }
       } else if (intent === "replace") {
-        switch (service) {
+        switch (cur.service) {
           case "windows":
           case "doors":
           case "deck":
@@ -202,7 +213,7 @@ const handleMessage = async (senderId, messageText) => {
           case "gutters":
             return sendBookingButton(senderId);
           case "roofing":
-            userState[senderId] = { ...nextState, step: "roof_type" };
+            userState[senderId] = { ...cur, intent, step: "roof_type" };
             return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
         }
       }
@@ -211,38 +222,25 @@ const handleMessage = async (senderId, messageText) => {
 
     case "fence_repair_confirm": {
       const decision = interpretYesNo(text);
-      if (decision === "yes") {
-        return sendBookingButton(senderId);
-      } else if (decision === "no") {
-        delete userState[senderId];
-        return sendText(senderId, "No worries! Let us know if you change your mind.");
-      } else {
-        return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
-      }
+      if (decision === "yes")      return sendBookingButton(senderId);
+      else if (decision === "no")  { delete userState[senderId]; return sendText(senderId, "No worries! Let us know if you change your mind."); }
+      else                         return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
     }
 
     case "roof_type": {
       const roofType = getBestMatch(text, ["asphalt", "metal", "cedar shingle"]);
       if (roofType === "cedar shingle") {
-        userState[senderId] = { ...state, step: "cedar_reject" };
-        return sendText(
-          senderId,
-          "We currently don't offer cedar shingle installations, but we'd be happy to replace them with asphalt or metal roofing. Would you like to proceed? (Yes/No)"
-        );
+        userState[senderId] = { ...cur, step: "cedar_reject" };
+        return sendText(senderId, "We currently don't offer cedar shingle installations, but we'd be happy to replace them with asphalt or metal roofing. Would you like to proceed? (Yes/No)");
       }
       return sendBookingButton(senderId);
     }
 
     case "cedar_reject": {
       const decision = interpretYesNo(text);
-      if (decision === "yes") {
-        return sendBookingButton(senderId);
-      } else if (decision === "no") {
-        delete userState[senderId];
-        return sendText(senderId, "No problem. Let us know if you ever need help with anything else!");
-      } else {
-        return sendText(senderId, "Would you like to move forward with asphalt or metal instead? (Yes/No)");
-      }
+      if (decision === "yes")      return sendBookingButton(senderId);
+      else if (decision === "no")  { delete userState[senderId]; return sendText(senderId, "No problem. Let us know if you ever need help with anything else!"); }
+      else                         return sendText(senderId, "Would you like to move forward with asphalt or metal instead? (Yes/No)");
     }
   }
 };
@@ -253,34 +251,29 @@ app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
-  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
-  }
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) return res.status(200).send(challenge);
   res.sendStatus(403);
 });
 
 app.post('/webhook', async (req, res) => {
-  if (req.body.object === 'page') {
-    for (const entry of req.body.entry) {
-      const event = entry.messaging[0];
-      const senderId = event.sender && event.sender.id;
-      if (!senderId) continue;
+  if (req.body.object !== 'page') return res.sendStatus(404);
+  for (const entry of req.body.entry) {
+    const event = entry.messaging[0];
+    const senderId = event.sender?.id;
+    if (!senderId) continue;
 
-      if (event.postback?.payload === "GET_STARTED") {
-        userState[senderId] = { step: "ask_zip" };
-        await sendText(senderId, "Hi! Before we begin, could you tell me your ZIP code so I can check if you're in our service area?");
-        return;
-      }
-
-      if (event.message?.text) {
-        await handleMessage(senderId, event.message.text);
-      }
+    if (event.postback?.payload === "GET_STARTED") {
+      userState[senderId] = { step: "ask_zip" };
+      await sendText(senderId, "Hi! Before we begin, could you tell me your ZIP code so I can check if you're in our service area?");
+      continue;
     }
-    res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
+
+    if (event.message?.text) {
+      await handleMessage(senderId, event.message.text);
+    }
   }
+  res.sendStatus(200);
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
