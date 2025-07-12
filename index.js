@@ -141,7 +141,6 @@ const handleMessage = async (senderId, messageText) => {
 
   let state = userState[senderId] || { step: "ask_zip" };
 
-  // ZIP validation must come first
   if (state.step === "ask_zip") {
     if (!/^\d{5}$/.test(text)) {
       return sendText(senderId, "Hi! I’m here to help. Could you please send your 5-digit ZIP code so I can check if we serve your area?");
@@ -156,7 +155,6 @@ const handleMessage = async (senderId, messageText) => {
     return sendText(senderId, "Great! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
   }
 
-  // Proceed through normal flow
   switch (state.step) {
     case "initial": {
       const service = getBestMatch(text, SERVICE_KEYWORDS);
@@ -215,14 +213,15 @@ const handleMessage = async (senderId, messageText) => {
     case "roof_type": {
       const roofType = getBestMatch(text, ["asphalt", "metal", "cedar shingle"]);
       if (roofType === "cedar shingle") {
-        userState[senderId] = {...state, step: "cedar_reject"};
-        return sendText{
+        userState[senderId] = { ...state, step: "cedar_reject" };
+        return sendText(
           senderId,
-          "We currently don't offer shingle installations, but we'd be happy to replace your current cedar shingles with asphalt or metal roofing. Would you like to proceed? (Yes/No)"
+          "We currently don't offer cedar shingle installations, but we'd be happy to replace them with asphalt or metal roofing. Would you like to proceed? (Yes/No)"
         );
-        }
+      }
       return sendBookingButton(senderId);
     }
+
     case "cedar_reject": {
       const decision = interpretYesNo(text);
       if (decision === "yes") {
@@ -255,7 +254,6 @@ app.post('/webhook', async (req, res) => {
     for (const entry of req.body.entry) {
       const event = entry.messaging[0];
       const senderId = event.sender && event.sender.id;
-
       if (!senderId) continue;
 
       if (event.postback?.payload === "GET_STARTED") {
