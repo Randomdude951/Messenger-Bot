@@ -12,14 +12,20 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
-
-const YES_NO_KEYWORDS = [
-  'yes', 'no',
-  'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative',
-  'nah', 'nope', 'negative'
-];
+const YES_NO_KEYWORDS = ['yes', 'no', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative', 'nah', 'nope', 'negative'];
 
 const userState = {};
+
+const validZipCodes = new Set([
+  "98011", "98012", "98020", "98021", "98026", "98028", "98033", "98034", "98036",
+  "98037", "98043", "98072", "98087", "98133", "98155", "98201", "98203", "98204",
+  "98208", "98223", "98229", "98232", "98233", "98235", "98238", "98241", "98244",
+  "98247", "98248", "98249", "98250", "98252", "98255", "98257", "98258", "98260",
+  "98263", "98266", "98267", "98270", "98271", "98272", "98273", "98274", "98275",
+  "98276", "98277", "98278", "98279", "98280", "98282", "98283", "98284", "98286",
+  "98287", "98288", "98290", "98291", "98292", "98293", "98294", "98295", "98296",
+  "98297"
+]);
 
 const sendText = async (senderId, text) => {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
@@ -48,7 +54,7 @@ const sendBookingButton = async (senderId) => {
               {
                 type: "web_url",
                 url: "https://www.ffexteriorsolutions.com/book-online",
-                title: "\ud83d\uddd3 Book Now"
+                title: "📅 Book Now"
               }
             ]
           }
@@ -82,39 +88,32 @@ const handleMessage = async (senderId, messageText) => {
     return sendText(senderId, "No problem! If you need anything in the future, just message us again. Take care!");
   }
 
-  const state = userState[senderId] || { step: "initial", greeted: false };
+  let state = userState[senderId] || { step: "ask_zip" };
 
-  if (!state.greeted) {
-    userState[senderId] = { ...state, greeted: true };
-    return sendText(senderId, "Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
+  // ZIP validation must come first
+  if (state.step === "ask_zip") {
+    if (!/^\d{5}$/.test(text)) {
+      return sendText(senderId, "Please enter a valid 5-digit ZIP code.");
+    }
+
+    if (!validZipCodes.has(text)) {
+      delete userState[senderId];
+      return sendText(senderId, "Unfortunately, we’re not servicing that area at this time. Please check back later!");
+    }
+
+    userState[senderId] = { ...state, zip: text, step: "initial", greeted: false };
+    return sendText(senderId, "Great! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
   }
 
+  // Proceed through normal flow
   switch (state.step) {
     case "initial": {
       const service = getBestMatch(text, SERVICE_KEYWORDS);
       if (service) {
-        userState[senderId] = { service, step: "repair_replace", greeted: true };
-        return sendText(
-          senderId,
-          `Are you looking to repair or replace your ${service}? Also, could you please provide your ZIP code?`
-        );
+        userState[senderId] = { ...state, service, step: "repair_replace", greeted: true };
+        return sendText(senderId, `Are you looking to repair or replace your ${service}?`);
       }
-      return sendText(
-        senderId,
-        "Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)"
-      );
-    }
-
-    case "fence_repair_confirm": {
-      const decision = interpretYesNo(text);
-      if (decision === "yes") {
-        return sendBookingButton(senderId);
-      } else if (decision === "no") {
-        delete userState[senderId];
-        return sendText(senderId, "No worries! Let us know if you change your mind.");
-      } else {
-        return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
-      }
+      return sendText(senderId, "What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
     }
 
     case "repair_replace": {
@@ -122,13 +121,14 @@ const handleMessage = async (senderId, messageText) => {
       if (!intent) return sendText(senderId, "Please type either 'repair' or 'replace'.");
 
       const { service } = state;
-      const nextState = { service, intent };
+      const nextState = { ...state, intent };
 
       if (intent === "repair") {
         if (["windows", "doors", "deck", "roofing", "gutters"].includes(service)) {
           delete userState[senderId];
           return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
         }
+
         if (service === "fence") {
           userState[senderId] = { ...nextState, step: "fence_repair_confirm" };
           return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
@@ -143,23 +143,29 @@ const handleMessage = async (senderId, messageText) => {
             return sendBookingButton(senderId);
           case "roofing":
             userState[senderId] = { ...nextState, step: "roof_type" };
-            return sendText(
-              senderId,
-              "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)"
-            );
+            return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
         }
       }
       break;
+    }
+
+    case "fence_repair_confirm": {
+      const decision = interpretYesNo(text);
+      if (decision === "yes") {
+        return sendBookingButton(senderId);
+      } else if (decision === "no") {
+        delete userState[senderId];
+        return sendText(senderId, "No worries! Let us know if you change your mind.");
+      } else {
+        return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
+      }
     }
 
     case "roof_type": {
       const roofType = getBestMatch(text, ["asphalt", "metal", "cedar shingle"]);
       if (roofType === "cedar shingle") {
         delete userState[senderId];
-        return sendText(
-          senderId,
-          "We currently don’t offer cedar shingle installations, but we’d love to help with asphalt or metal options."
-        );
+        return sendText(senderId, "We currently don’t offer cedar shingle installations, but we’d love to help with asphalt or metal options.");
       }
       return sendBookingButton(senderId);
     }
@@ -187,22 +193,14 @@ app.post('/webhook', async (req, res) => {
 
       if (!senderId) continue;
 
-      // Handle "Get Started" button
       if (event.postback?.payload === "GET_STARTED") {
-        userState[senderId] = { step: "initial", greeted: false };
-        await sendText(senderId, "Hi! I'm here to help. What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
+        userState[senderId] = { step: "ask_zip" };
+        await sendText(senderId, "Hi! Before we begin, could you tell me your ZIP code so I can check if you're in our service area?");
         return;
       }
 
       if (event.message?.text) {
-        const text = event.message.text;
-
-        if (/^\d{5}$/.test(text)) {
-          userState[senderId] = { ...(userState[senderId] || {}), zip: text };
-          await sendText(senderId, "Thanks! Now back to your request — what type of service do you need help with? (Fence, Deck, Windows, Doors, Roofing, Gutters)");
-        } else {
-          await handleMessage(senderId, text);
-        }
+        await handleMessage(senderId, event.message.text);
       }
     }
     res.sendStatus(200);
@@ -212,4 +210,3 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
