@@ -13,6 +13,8 @@ app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 const YES_NO_KEYWORDS = ['yes', 'no', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative', 'nah', 'nope', 'negative'];
+// ——— NEW: keywords that trigger a hand-off to a human ———
+const HUMAN_KEYWORDS = ['human', 'person', 'agent', 'representative'];
 
 const userState = {};
 
@@ -133,6 +135,15 @@ const interpretYesNo = (input) => {
 
 const handleMessage = async (senderId, messageText) => {
   const text = messageText.trim().toLowerCase();
+
+  // ——— NEW: human hand-off check ———
+  if (HUMAN_KEYWORDS.some(keyword => text.includes(keyword))) {
+    delete userState[senderId];
+    return sendText(
+      senderId,
+      "Please provide an email or phone number and a person will reach out to you shortly."
+    );
+  }
 
   if (["exit", "cancel", "stop", "nevermind"].includes(text)) {
     delete userState[senderId];
