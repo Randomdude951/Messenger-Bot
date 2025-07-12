@@ -75,13 +75,7 @@ const validZipCodes = new Set([
   "98294" /* Sultan */, 
   "98296" /* Snohomish (South) */, 
   "98236" /* Clinton */, 
-  "98260" /* Langley */, 
-  "98249" /* Freeland */, 
-  "98253" /* Greenbank */, 
-  "98239" /* Coupeville */, 
-  "98277" /* Oak Harbor */, 
-  "98278" /* Oak Harbor (NAS) */, 
-  "98282" /* Coupeville */
+  "98260" /* Langley */
 ]);
 
 const sendText = async (senderId, text) => {
@@ -106,7 +100,7 @@ const sendBookingButton = async (senderId) => {
           type: "template",
           payload: {
             template_type: "button",
-            text: "You're a great fit! Go ahead and book your consultation here:",
+            text: "Perfect! Just click the link to book your free consultation, and we’ll follow up with a quick confirmation call.",
             buttons: [
               {
                 type: "web_url",
@@ -221,10 +215,24 @@ const handleMessage = async (senderId, messageText) => {
     case "roof_type": {
       const roofType = getBestMatch(text, ["asphalt", "metal", "cedar shingle"]);
       if (roofType === "cedar shingle") {
-        delete userState[senderId];
-        return sendText(senderId, "We currently don’t offer cedar shingle installations, but we’d love to help with asphalt or metal options.");
-      }
+        userState[senderId] = {...state, step: "cedar_reject"};
+        return sendText{
+          senderId,
+          "We currently don't offer shingle installations, but we'd be happy to replace your current cedar shingles with asphalt or metal roofing. Would you like to proceed? (Yes/No)"
+        );
+        }
       return sendBookingButton(senderId);
+    }
+    case "cedar_reject": {
+      const decision = interpretYesNo(text);
+      if (decision === "yes") {
+        return sendBookingButton(senderId);
+      } else if (decision === "no") {
+        delete userState[senderId];
+        return sendText(senderId, "No problem. Let us know if you ever need help with anything else!");
+      } else {
+        return sendText(senderId, "Would you like to move forward with asphalt or metal instead? (Yes/No)");
+      }
     }
   }
 };
