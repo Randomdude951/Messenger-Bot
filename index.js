@@ -93,7 +93,7 @@ const handleMessage = async (senderId, messageText) => {
   // ZIP validation must come first
   if (state.step === "ask_zip") {
     if (!/^\d{5}$/.test(text)) {
-      return sendText(senderId, "Please enter a valid 5-digit ZIP code.");
+      return sendText(senderId, "Hi! I’m here to help. Could you please send your 5-digit ZIP code so I can check if we serve your area?");
     }
 
     if (!validZipCodes.has(text)) {
