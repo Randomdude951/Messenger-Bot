@@ -104,7 +104,7 @@ const sendBookingButton = async (senderId) => {
           payload: {
             template_type: "button",
             text: "Perfect! Just click the link to book your free consultation, and we’ll follow up with a quick confirmation call.",
-            buttons: [{ type: "web_url", url: "https://www.ffexteriorsolutions.com/book-online", title: "📅 Book Now" }]
+            buttons: [{ type: "web_url", url: "https://www.ffexteriorsolutions.com/booking-calendar/free-estimate-in-home?referral=service_list_widget", title: "📅 Book Now" }]
           }
         }
       }
