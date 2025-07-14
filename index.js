@@ -104,8 +104,8 @@ const handleMessage = async (senderId, message) => {
     userState[senderId] = newState;
 
     const greetingText = svc
-      ? `Hi! You’d like to ${intent||'get'} your ${svc}. First, send your 5-digit ZIP code.`
-      : `Hi! Before we begin, send your 5-digit ZIP code so I can check our service area.`;
+      ? `Great! Please send your 5-digit ZIP code to check if you're in our service area.`
+      : `Hi! Before we begin, send your 5-digit ZIP code so I can check if you're in our service area.`;
     return sendText(senderId, greetingText);
   }
 
