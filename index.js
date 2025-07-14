@@ -18,12 +18,19 @@ const THANKS_REGEX        = /^(thanks?|thank you|thx|ty)\b/;
 
 // very flexible “end the chat” detection
 const REJECTION_PATTERNS = [
-  /\b(no[-\s]*thank(?:s| you))\b/,            // “no thank you”, “no-thanks”
-  /\b(no[-\s]*stop)\b/,                       // “no stop”
-  /\b(stop)\b/,                               // “stop”
-  /\b(exit|cancel|nevermind)\b/,              // basic terms
-  /\b(take me off (?:your|this) list(?:s)?)\b/,// “take me off your list(s)”
-  /\b(leave me (?:alone|off))\b/               // “leave me alone”
+  /\b(no[-\s]*thank(?:s| you))\b/,
+  /\b(no[-\s]*stop)\b/,
+  /\b(stop)\b/,
+  /\b(exit|cancel|nevermind)\b/,
+  /\b(take me off (?:your|this) list(?:s)?)\b/,
+  /\b(leave me (?:alone|off))\b/
+];
+
+// broad pricing-intent detection, excluding time-related asks
+const PRICE_PATTERNS = [
+  /\bhow much\b.*\b(?:cost|price)\b/,
+  /\bwhat(?:'s| is)\s+(?:the\s*)?(?:cost|price)\b/,
+  /\b(?:cost|price)\b/
 ];
 
 const userState = {};
@@ -43,10 +50,7 @@ const sendText = async (senderId, text) => {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipient: { id: senderId },
-        message: { text }
-      })
+      body: JSON.stringify({ recipient: { id: senderId }, message: { text } })
     }
   );
 };
@@ -65,13 +69,7 @@ const sendBookingButton = async (senderId) => {
             payload: {
               template_type: "button",
               text: "Perfect! Just click the link to book your free consultation, and we’ll follow up with a quick confirmation call.",
-              buttons: [
-                {
-                  type: "web_url",
-                  url: "https://www.ffexteriorsolutions.com/book-online",
-                  title: "📅 Book Now"
-                }
-              ]
+              buttons: [{ type: "web_url", url: "https://www.ffexteriorsolutions.com/book-online", title: "📅 Book Now" }]
             }
           }
         }
@@ -97,20 +95,16 @@ const interpretYesNo = (input) => {
 };
 
 const handleMessage = async (senderId, messageText) => {
-  // normalize for matching
+  // normalize
   const raw      = messageText.trim().toLowerCase();
   const stripped = raw.replace(/[^\w\s]/g, ' ');
-  
+
   // 0) catch any “end chat” intent
   if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
     delete userState[senderId];
-    return sendText(
-      senderId,
-      "Understood—I'll close this chat now. If you ever need us again, just send a message. Take care!"
-    );
+    return sendText(senderId, "Understood—I'll close this chat now. If you ever need us again, just send a message. Take care!");
   }
 
-  // now continue with the rest of the flow
   const text  = raw;
   const state = userState[senderId] || {};
 
@@ -132,18 +126,24 @@ const handleMessage = async (senderId, messageText) => {
   // 3) human hand-off trigger
   if (HUMAN_KEYWORDS.some(k => text.includes(k))) {
     userState[senderId] = { step: 'collect_contact', zip: state.zip };
-    return sendText(
-      senderId,
-      "Please provide an email or phone number and a person will reach out to you shortly."
-    );
+    return sendText(senderId, "Please provide an email or phone number and a person will reach out to you shortly.");
   }
 
-  // 4) no state yet? try service + intent pre-selection
+  // 4) pricing intent branch (exclude time questions)
+  const isPriceQuestion = PRICE_PATTERNS.some(rx => rx.test(raw));
+  const isTimeQuestion  = /\btime\b/.test(raw);
+  if (isPriceQuestion && !isTimeQuestion) {
+    if (text.includes('fence')) {
+      return sendText(senderId, "Fence repairs start at a $849 minimum. For an exact estimate we offer a free consultation—would you like our booking link?");
+    } else {
+      return sendText(senderId, "Pricing varies based on project specifics. We offer a free, no-obligation consultation to give you an accurate quote—shall I send you our booking link?");
+    }
+  }
+
+  // 5) no state yet? try service + intent pre-selection
   if (!state.step) {
-    let service = getBestMatch(text, SERVICE_KEYWORDS)
-               || SERVICE_KEYWORDS.find(k => text.includes(k));
-    let intent  = getBestMatch(text, ['repair','replace'])
-               || ['repair','replace'].find(w => text.includes(w));
+    let service = getBestMatch(text, SERVICE_KEYWORDS) || SERVICE_KEYWORDS.find(k => text.includes(k));
+    let intent  = getBestMatch(text, ['repair','replace'])  || ['repair','replace'].find(w => text.includes(w));
 
     if (service) {
       const newState = { step: 'ask_zip', preselectedService: service };
@@ -157,27 +157,18 @@ const handleMessage = async (senderId, messageText) => {
       userState[senderId] = newState;
       return sendText(senderId, prompt);
     } else {
-      return sendText(
-        senderId,
-        `Sorry, we don’t currently offer “${messageText.trim()}.”`
-      );
+      return sendText(senderId, `Sorry, we don’t currently offer “${messageText.trim()}.”`);
     }
   }
 
-  // 5) ZIP code step
+  // 6) ZIP code step
   if (state.step === 'ask_zip') {
     if (!/^\d{5}$/.test(text)) {
-      return sendText(
-        senderId,
-        "Please send a valid 5-digit ZIP code so I can check if we serve your area."
-      );
+      return sendText(senderId, "Please send a valid 5-digit ZIP code so I can check if we serve your area.");
     }
     if (!validZipCodes.has(text)) {
       delete userState[senderId];
-      return sendText(
-        senderId,
-        "Unfortunately, we’re not servicing that area right now. Check back soon!"
-      );
+      return sendText(senderId, "Unfortunately, we’re not servicing that area right now. Check back soon!");
     }
 
     const svc    = state.preselectedService;
@@ -202,7 +193,7 @@ const handleMessage = async (senderId, messageText) => {
           return sendBookingButton(senderId);
         }
       }
-      // no intent? fall through to normal repair_replace ask
+      // no intent? fall through
     }
 
     // standard flow: ask repair or replace
@@ -210,13 +201,11 @@ const handleMessage = async (senderId, messageText) => {
     return sendText(senderId, `Perfect! Are you looking to repair or replace your ${svc}?`);
   }
 
-  // 6) main conversation flow
+  // 7) main conversation flow
   switch (state.step) {
     case 'repair_replace': {
       const intent = getBestMatch(text, ['repair', 'replace']);
-      if (!intent) {
-        return sendText(senderId, "Please type either 'repair' or 'replace'.");
-      }
+      if (!intent) return sendText(senderId, "Please type either 'repair' or 'replace'.");
 
       const { service } = state;
       const nextState   = { service, intent };
@@ -229,7 +218,7 @@ const handleMessage = async (senderId, messageText) => {
           delete userState[senderId];
           return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
         }
-      } else { // replace
+      } else {
         if (service === 'roofing') {
           userState[senderId] = { ...nextState, step: 'roof_type' };
           return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
@@ -241,42 +230,28 @@ const handleMessage = async (senderId, messageText) => {
 
     case 'fence_repair_confirm': {
       const decision = interpretYesNo(text);
-      if (decision === 'yes') {
-        return sendBookingButton(senderId);
-      } else if (decision === 'no') {
-        delete userState[senderId];
-        return sendText(senderId, "No worries! Let us know if you change your mind.");
-      } else {
-        return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
-      }
+      if (decision === 'yes')                  return sendBookingButton(senderId);
+      else if (decision === 'no') { delete userState[senderId]; return sendText(senderId, "No worries! Let us know if you change your mind."); }
+      else                                     return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
     }
 
     case 'roof_type': {
       const roofType = getBestMatch(text, ['asphalt','metal','cedar shingle']);
       if (roofType === 'cedar shingle') {
         userState[senderId] = { ...state, step: 'cedar_reject' };
-        return sendText(
-          senderId,
-          "We currently don't offer cedar shingle installations, but we'd be happy to replace them with asphalt or metal roofing. Would you like to proceed? (Yes/No)"
-        );
+        return sendText(senderId, "We currently don't offer cedar shingle installations, but we'd be happy to replace them with asphalt or metal roofing. Would you like to proceed? (Yes/No)");
       }
       return sendBookingButton(senderId);
     }
 
     case 'cedar_reject': {
       const decision = interpretYesNo(text);
-      if (decision === 'yes') {
-        return sendBookingButton(senderId);
-      } else if (decision === 'no') {
-        delete userState[senderId];
-        return sendText(senderId, "No problem. Let us know if you ever need help with anything else!");
-      } else {
-        return sendText(senderId, "Would you like to move forward with asphalt or metal instead? (Yes/No)");
-      }
+      if (decision === 'yes')                  return sendBookingButton(senderId);
+      else if (decision === 'no') { delete userState[senderId]; return sendText(senderId, "No problem. Let us know if you ever need help with anything else!"); }
+      else                                     return sendText(senderId, "Would you like to move forward with asphalt or metal instead? (Yes/No)");
     }
 
     default:
-      // unknown state, reset
       delete userState[senderId];
       return sendText(senderId, "Oops, something went wrong. Let's start over—what service can I help you with?");
   }
@@ -303,9 +278,7 @@ app.post('/webhook', async (req, res) => {
     if (!senderId) continue;
 
     // skip FB ice-breaker quick replies
-    if (event.message?.quick_reply) {
-      continue;
-    }
+    if (event.message?.quick_reply) continue;
 
     // handle Get Started
     if (event.postback?.payload === "GET_STARTED") {
@@ -326,4 +299,5 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
 
