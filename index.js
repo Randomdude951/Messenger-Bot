@@ -26,7 +26,7 @@ const PRICE_PATTERNS = [
   /\bwhat(?:'s| is)\s+(?:the\s*)?(?:cost|price)\b/,
   /\b(?:cost|price)\b/
 ];
-const AFFIRMATION_PATTERNS = [ /\b(fine|sounds good|works for me|that's fine|thats fine)\b/ ];
+const AFFIRMATION_PATTERNS = [ /\b(fine|sounds good|works for me|that's fine|thats fine|alright)\b/ ];
 const GREETING_PATTERN = /\b(hi|hello|hey)\b/;
 
 // State and ZIP codes
@@ -106,7 +106,7 @@ const handleMessage = async (sid, message) => {
   // 0) Exit / rejection
   if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
     delete userState[sid];
-    return sendText(sid, 'Understood—closing chat.');
+    return sendText(sid, 'Understood— I\'ll close this chat now. If you ever need us just send a message. Take care!');
   }
 
   // 0a) Greeting with optional pre-service and pre-intent
@@ -125,8 +125,8 @@ const handleMessage = async (sid, message) => {
     };
 
     const greet = svc
-      ? `Hi! You’d like to ${intent || 'get'} your ${svc}. Please send your 5-digit ZIP code.`
-      : `Hi! Please send your 5-digit ZIP code so I can check our area.`;
+      ? `Please send your 5-digit ZIP code so I can check if you're in our area.`
+      : `Hi! Please send your 5-digit ZIP code so I can check if you're in our area.`;
     return sendText(sid, greet);
   }
 
@@ -151,7 +151,7 @@ const handleMessage = async (sid, message) => {
   // 3) Human handoff trigger
   if (HUMAN_KEYWORDS.some(k => raw.includes(k))) {
     userState[sid] = { step: 'collect_contact', zip: state.zip };
-    return sendText(sid, 'Please share email or phone, and we’ll contact you.');
+    return sendText(sid, 'Please share your email or phone number, and we’ll contact you soon.');
   }
 
   // 4) Pricing inquiries
@@ -210,7 +210,7 @@ const handleMessage = async (sid, message) => {
       if (preIntent === 'repair') {
         if (preService === 'fence') {
           userState[sid] = { step: 'fence_confirm', service: 'fence', zip };
-          return sendText(sid, 'Fence repairs start at $849 – proceed? (Yes/No)');
+          return sendText(sid, 'Fence repairs start at $849 – proceed?');
         } else {
           delete userState[sid];
           return sendText(sid, `We don't repair ${preService}.`);
