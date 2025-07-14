@@ -384,9 +384,17 @@ app.post('/webhook', async (req, res) => {
       continue;
     }
 
+    // if FB’s “Frequently Asked Questions” quick-reply button was tapped, skip our bot
+    if (event.message?.quick_reply) {
+  // you can even inspect quick_reply.payload here if you want custom handling,
+  // but if you just want to let Facebook’s automated reply stand, do nothing:
+      continue;
+    }
+
     if (event.message?.text) {
       await handleMessage(senderId, event.message.text);
     }
+
   }
 
   res.sendStatus(200);
