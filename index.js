@@ -12,9 +12,11 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
-const YES_NO_KEYWORDS = ['yes', 'no', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative', 'nah', 'nope', 'negative'];
-const HUMAN_KEYWORDS = ['human', 'person', 'agent', 'representative'];
-const THANKS_REGEX = /^(thanks?|thank you|thx|ty)\b/;
+const YES_NO_KEYWORDS     = ['yes', 'no', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative', 'nah', 'nope', 'negative'];
+const HUMAN_KEYWORDS      = ['human', 'person', 'agent', 'representative'];
+const THANKS_REGEX        = /^(thanks?|thank you|thx|ty)\b/;
+
+// very flexible “end the chat” detection
 const REJECTION_PATTERNS = [
   /\b(no[-\s]*thank(?:s| you))\b/,            // “no thank you”, “no-thanks”
   /\b(no[-\s]*stop)\b/,                       // “no stop”
@@ -24,69 +26,15 @@ const REJECTION_PATTERNS = [
   /\b(leave me (?:alone|off))\b/               // “leave me alone”
 ];
 
-
 const userState = {};
 
 const validZipCodes = new Set([
-  "98011" /* Bothell */,
-  "98012" /* Mill Creek */,
-  "98020" /* Edmonds */,
-  "98021" /* Bothell */,
-  "98026" /* Edmonds */,
-  "98028" /* Kenmore */,
-  "98033" /* Kirkland */,
-  "98034" /* Kirkland */,
-  "98036" /* Lynnwood */,
-  "98037" /* Lynnwood */,
-  "98043" /* Mountlake Terrace */,
-  "98072" /* Woodinville */,
-  "98087" /* Lynnwood */,
-  "98133" /* Seattle (North) */,
-  "98155" /* Shoreline */,
-  "98201" /* Everett */,
-  "98203" /* Everett */,
-  "98204" /* Everett */,
-  "98208" /* Everett */,
-  "98223" /* Arlington */,
-  "98229" /* Bellingham (East) */,
-  "98232" /* Bow */,
-  "98233" /* Burlington */,
-  "98235" /* Clearlake */,
-  "98238" /* Conway */,
-  "98241" /* Darrington */,
-  "98244" /* Deming */,
-  "98247" /* Everson */,
-  "98248" /* Ferndale */,
-  "98249" /* Freeland */,
-  "98250" /* Friday Harbor */,
-  "98252" /* Granite Falls */,
-  "98255" /* Hamilton */,
-  "98257" /* La Conner */,
-  "98258" /* Lake Stevens */,
-  "98260" /* Langley */,
-  "98263" /* Lyman */,
-  "98266" /* Marblemount */,
-  "98267" /* Clear Lake */,
-  "98270" /* Marysville */,
-  "98271" /* Marysville (North) */,
-  "98272" /* Monroe */,
-  "98273" /* Mount Vernon */,
-  "98274" /* Mount Vernon (East) */,
-  "98275" /* Mukilteo */,
-  "98277" /* Oak Harbor */,
-  "98278" /* Oak Harbor (NAS) */,
-  "98282" /* Coupeville */,
-  "98283" /* Rockport */,
-  "98284" /* Sedro-Woolley */,
-  "98287" /* Silvana */,
-  "98288" /* Skykomish */,
-  "98290" /* Snohomish */,
-  "98292" /* Stanwood */,
-  "98293" /* Startup */,
-  "98294" /* Sultan */,
-  "98296" /* Snohomish (South) */,
-  "98236" /* Clinton */,
-  "98260" /* Langley */
+  "98011","98012","98020","98021","98026","98028","98033","98034","98036","98037",
+  "98043","98072","98087","98133","98155","98201","98203","98204","98208","98223",
+  "98229","98232","98233","98235","98238","98241","98244","98247","98248","98249",
+  "98250","98252","98255","98257","98258","98260","98263","98266","98267","98270",
+  "98271","98272","98273","98274","98275","98277","98278","98282","98283","98284",
+  "98287","98288","98290","98292","98293","98294","98296","98236"
 ]);
 
 const sendText = async (senderId, text) => {
@@ -149,40 +97,39 @@ const interpretYesNo = (input) => {
 };
 
 const handleMessage = async (senderId, messageText) => {
-  const raw = messageText.trim().toLowerCase();
+  // normalize for matching
+  const raw      = messageText.trim().toLowerCase();
   const stripped = raw.replace(/[^\w\s]/g, ' ');
-
+  
+  // 0) catch any “end chat” intent
   if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
     delete userState[senderId];
     return sendText(
       senderId,
-      "Understood—I'll close this chat now. If you ever need us, just send a message. Take care!"
+      "Understood—I'll close this chat now. If you ever need us again, just send a message. Take care!"
     );
   }
 
-
-  
-  const text = messageText.trim().toLowerCase();
+  // now continue with the rest of the flow
+  const text  = raw;
   const state = userState[senderId] || {};
 
-  // 1) Collecting contact info
+  // 1) collecting contact info
   if (state.step === 'collect_contact') {
     if (THANKS_REGEX.test(text)) return; // ignore a “thanks”
     await sendText(senderId, "Thank you! A person will reach out to you shortly.");
-    // keep ZIP around if you want, then mark done
     userState[senderId] = { step: 'handoff_done', zip: state.zip };
     return;
   }
 
-  // 2) After handoff done: ignore one “thanks”, then reset and reprocess
+  // 2) after handoff done: ignore one “thanks”, then reset and reprocess
   if (state.step === 'handoff_done') {
     if (THANKS_REGEX.test(text)) return;
     delete userState[senderId];
-    // re-enter normal flow on whatever they just said
     return handleMessage(senderId, messageText);
   }
 
-  // 3) Human hand-off trigger
+  // 3) human hand-off trigger
   if (HUMAN_KEYWORDS.some(k => text.includes(k))) {
     userState[senderId] = { step: 'collect_contact', zip: state.zip };
     return sendText(
@@ -191,15 +138,24 @@ const handleMessage = async (senderId, messageText) => {
     );
   }
 
-  // 5) No state yet? try service pre‐selection
+  // 4) no state yet? try service + intent pre-selection
   if (!state.step) {
-    const service = getBestMatch(text, SERVICE_KEYWORDS);
+    let service = getBestMatch(text, SERVICE_KEYWORDS)
+               || SERVICE_KEYWORDS.find(k => text.includes(k));
+    let intent  = getBestMatch(text, ['repair','replace'])
+               || ['repair','replace'].find(w => text.includes(w));
+
     if (service) {
-      userState[senderId] = { step: 'ask_zip', preselectedService: service };
-      return sendText(
-        senderId,
-        `Great, you’re interested in ${service}. First, could you send me your 5-digit ZIP code so I can check our service area?`
-      );
+      const newState = { step: 'ask_zip', preselectedService: service };
+      let prompt;
+      if (intent) {
+        newState.preselectedIntent = intent;
+        prompt = `Got it—you want to ${intent} your ${service}. First, could you send me your 5-digit ZIP code so I can check our service area?`;
+      } else {
+        prompt = `Great, you’re interested in ${service}. First, could you send me your 5-digit ZIP code so I can check our service area?`;
+      }
+      userState[senderId] = newState;
+      return sendText(senderId, prompt);
     } else {
       return sendText(
         senderId,
@@ -208,7 +164,7 @@ const handleMessage = async (senderId, messageText) => {
     }
   }
 
-  // 6) ZIP step
+  // 5) ZIP code step
   if (state.step === 'ask_zip') {
     if (!/^\d{5}$/.test(text)) {
       return sendText(
@@ -223,44 +179,39 @@ const handleMessage = async (senderId, messageText) => {
         "Unfortunately, we’re not servicing that area right now. Check back soon!"
       );
     }
-    // ZIP ok
-    if (state.preselectedService) {
-      // skip to repair/replace
-      userState[senderId] = {
-        step: 'repair_replace',
-        zip: text,
-        service: state.preselectedService
-      };
-      return sendText(
-        senderId,
-        `Perfect! Are you looking to repair or replace your ${state.preselectedService}?`
-      );
-    } else {
-      userState[senderId] = { step: 'initial', zip: text, greeted: false };
-      return sendText(
-        senderId,
-        "Great! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)"
-      );
+
+    const svc    = state.preselectedService;
+    const intent = state.preselectedIntent;
+
+    // handle if they pre-specified both service and intent
+    if (svc) {
+      if (intent === 'repair') {
+        if (svc === 'fence') {
+          userState[senderId] = { step: 'fence_repair_confirm', zip: text, service: svc };
+          return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
+        } else {
+          delete userState[senderId];
+          return sendText(senderId, `Unfortunately, we do not offer ${svc} repairs at this time.`);
+        }
+      }
+      if (intent === 'replace') {
+        if (svc === 'roofing') {
+          userState[senderId] = { step: 'roof_type', zip: text, service: svc };
+          return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
+        } else {
+          return sendBookingButton(senderId);
+        }
+      }
+      // no intent? fall through to normal repair_replace ask
     }
+
+    // standard flow: ask repair or replace
+    userState[senderId] = { step: 'repair_replace', zip: text, service: svc };
+    return sendText(senderId, `Perfect! Are you looking to repair or replace your ${svc}?`);
   }
 
-  // 7) Main flow
+  // 6) main conversation flow
   switch (state.step) {
-    case 'initial': {
-      const service = getBestMatch(text, SERVICE_KEYWORDS);
-      if (service) {
-        userState[senderId] = { ...state, service, step: 'repair_replace', greeted: true };
-        return sendText(
-          senderId,
-          `Are you looking to repair or replace your ${service}?`
-        );
-      }
-      return sendText(
-        senderId,
-        "What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)"
-      );
-    }
-
     case 'repair_replace': {
       const intent = getBestMatch(text, ['repair', 'replace']);
       if (!intent) {
@@ -268,40 +219,24 @@ const handleMessage = async (senderId, messageText) => {
       }
 
       const { service } = state;
-      const nextState = { ...state, intent };
+      const nextState   = { service, intent };
 
       if (intent === 'repair') {
-        if (['windows','doors','deck','roofing','gutters'].includes(service)) {
-          delete userState[senderId];
-          return sendText(
-            senderId,
-            `Unfortunately, we do not offer ${service} repairs at this time.`
-          );
-        }
         if (service === 'fence') {
           userState[senderId] = { ...nextState, step: 'fence_repair_confirm' };
-          return sendText(
-            senderId,
-            "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)"
-          );
+          return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
+        } else {
+          delete userState[senderId];
+          return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
         }
       } else { // replace
-        switch (service) {
-          case 'windows':
-          case 'doors':
-          case 'deck':
-          case 'fence':
-          case 'gutters':
-            return sendBookingButton(senderId);
-          case 'roofing':
-            userState[senderId] = { ...nextState, step: 'roof_type' };
-            return sendText(
-              senderId,
-              "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)"
-            );
+        if (service === 'roofing') {
+          userState[senderId] = { ...nextState, step: 'roof_type' };
+          return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
+        } else {
+          return sendBookingButton(senderId);
         }
       }
-      break;
     }
 
     case 'fence_repair_confirm': {
@@ -310,15 +245,9 @@ const handleMessage = async (senderId, messageText) => {
         return sendBookingButton(senderId);
       } else if (decision === 'no') {
         delete userState[senderId];
-        return sendText(
-          senderId,
-          "No worries! Let us know if you change your mind."
-        );
+        return sendText(senderId, "No worries! Let us know if you change your mind.");
       } else {
-        return sendText(
-          senderId,
-          "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)"
-        );
+        return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
       }
     }
 
@@ -340,27 +269,25 @@ const handleMessage = async (senderId, messageText) => {
         return sendBookingButton(senderId);
       } else if (decision === 'no') {
         delete userState[senderId];
-        return sendText(
-          senderId,
-          "No problem. Let us know if you ever need help with anything else!"
-        );
+        return sendText(senderId, "No problem. Let us know if you ever need help with anything else!");
       } else {
-        return sendText(
-          senderId,
-          "Would you like to move forward with asphalt or metal instead? (Yes/No)"
-        );
+        return sendText(senderId, "Would you like to move forward with asphalt or metal instead? (Yes/No)");
       }
     }
+
+    default:
+      // unknown state, reset
+      delete userState[senderId];
+      return sendText(senderId, "Oops, something went wrong. Let's start over—what service can I help you with?");
   }
 };
 
 app.get('/', (req, res) => res.send('Messenger bot is running'));
 
 app.get('/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
+  const mode      = req.query['hub.mode'];
+  const token     = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     return res.status(200).send(challenge);
   }
@@ -371,10 +298,16 @@ app.post('/webhook', async (req, res) => {
   if (req.body.object !== 'page') return res.sendStatus(404);
 
   for (const entry of req.body.entry) {
-    const event = entry.messaging[0];
+    const event    = entry.messaging[0];
     const senderId = event.sender?.id;
     if (!senderId) continue;
 
+    // skip FB ice-breaker quick replies
+    if (event.message?.quick_reply) {
+      continue;
+    }
+
+    // handle Get Started
     if (event.postback?.payload === "GET_STARTED") {
       userState[senderId] = { step: "ask_zip" };
       await sendText(
@@ -384,17 +317,9 @@ app.post('/webhook', async (req, res) => {
       continue;
     }
 
-    // if FB’s “Frequently Asked Questions” quick-reply button was tapped, skip our bot
-    if (event.message?.quick_reply) {
-  // you can even inspect quick_reply.payload here if you want custom handling,
-  // but if you just want to let Facebook’s automated reply stand, do nothing:
-      continue;
-    }
-
     if (event.message?.text) {
       await handleMessage(senderId, event.message.text);
     }
-
   }
 
   res.sendStatus(200);
