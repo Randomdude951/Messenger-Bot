@@ -26,6 +26,10 @@ const REJECTION_PATTERNS = [
   /\b(leave me (?:alone|off))\b/
 ];
 
+const AFFIRMATION_PATTERNS = [
+  /\b(fine|sounds good|works for me|that's fine|thats fine)\b/
+];
+
 // broad pricing-intent detection, excluding time-related asks
 const PRICE_PATTERNS = [
   /\bhow much\b.*\b(?:cost|price)\b/,
@@ -229,10 +233,22 @@ const handleMessage = async (senderId, messageText) => {
     }
 
     case 'fence_repair_confirm': {
+      // first, catch any “yes” via interpretYesNo
       const decision = interpretYesNo(text);
-      if (decision === 'yes')                  return sendBookingButton(senderId);
-      else if (decision === 'no') { delete userState[senderId]; return sendText(senderId, "No worries! Let us know if you change your mind."); }
-      else                                     return sendText(senderId, "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)");
+      // then also catch looser affirmations
+      const affirmed = AFFIRMATION_PATTERNS.some(rx => rx.test(stripped));
+
+      if (decision === 'yes' || affirmed) {
+        return sendBookingButton(senderId);
+      } else if (decision === 'no') {
+        delete userState[senderId];
+        return sendText(senderId, "No worries! Let us know if you change your mind.");
+      } else {
+        return sendText(
+          senderId,
+          "Just to confirm, would you like to proceed with the $849 minimum fence repair? (Yes/No)"
+        );
+      }
     }
 
     case 'roof_type': {
