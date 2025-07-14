@@ -12,8 +12,8 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 app.use(bodyParser.json());
 
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
-const YES_NO_KEYWORDS     = ['yes', 'no', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative', 'nah', 'nope', 'negative'];
-const HUMAN_KEYWORDS      = ['human', 'person', 'agent', 'representative'];
+const YES_NO_KEYWORDS     = ['yes','no','yeah','ye','yup','ok','okay','sure','affirmative','nah','nope','negative'];
+const HUMAN_KEYWORDS      = ['human','person','agent','representative'];
 const THANKS_REGEX        = /^(thanks?|thank you|thx|ty)\b/;
 
 // very flexible “end the chat” detection
@@ -26,16 +26,20 @@ const REJECTION_PATTERNS = [
   /\b(leave me (?:alone|off))\b/
 ];
 
-const AFFIRMATION_PATTERNS = [
-  /\b(fine|sounds good|works for me|that's fine|thats fine)\b/
-];
-
-// broad pricing-intent detection, excluding time-related asks
+// capture price questions (not time)
 const PRICE_PATTERNS = [
   /\bhow much\b.*\b(?:cost|price)\b/,
   /\bwhat(?:'s| is)\s+(?:the\s*)?(?:cost|price)\b/,
   /\b(?:cost|price)\b/
 ];
+
+// capture looser affirmations on fence-confirm
+const AFFIRMATION_PATTERNS = [
+  /\b(fine|sounds good|works for me|that's fine|thats fine)\b/
+];
+
+// capture greetings to restart after invalid ZIP or reset
+const GREETING_PATTERN = /\b(hi|hello|hey)\b/;
 
 const userState = {};
 
@@ -73,7 +77,9 @@ const sendBookingButton = async (senderId) => {
             payload: {
               template_type: "button",
               text: "Perfect! Just click the link to book your free consultation, and we’ll follow up with a quick confirmation call.",
-              buttons: [{ type: "web_url", url: "https://www.ffexteriorsolutions.com/book-online", title: "📅 Book Now" }]
+              buttons: [
+                { type: "web_url", url: "https://www.ffexteriorsolutions.com/book-online", title: "📅 Book Now" }
+              ]
             }
           }
         }
@@ -106,11 +112,23 @@ const handleMessage = async (senderId, messageText) => {
   // 0) catch any “end chat” intent
   if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
     delete userState[senderId];
-    return sendText(senderId, "Understood—I'll close this chat now. If you ever need us again, just send a message. Take care!");
+    return sendText(
+      senderId,
+      "Understood—I'll close this chat now. If you ever need us again, just send a message. Take care!"
+    );
   }
 
   const text  = raw;
   const state = userState[senderId] || {};
+
+  // greeting restart: back to ZIP prompt
+  if (!state.step && GREETING_PATTERN.test(raw)) {
+    userState[senderId] = { step: 'ask_zip' };
+    return sendText(
+      senderId,
+      "Hi! Before we begin, could you tell me your ZIP code so I can check if you're in our service area?"
+    );
+  }
 
   // 1) collecting contact info
   if (state.step === 'collect_contact') {
@@ -130,7 +148,10 @@ const handleMessage = async (senderId, messageText) => {
   // 3) human hand-off trigger
   if (HUMAN_KEYWORDS.some(k => text.includes(k))) {
     userState[senderId] = { step: 'collect_contact', zip: state.zip };
-    return sendText(senderId, "Please provide an email or phone number and a person will reach out to you shortly.");
+    return sendText(
+      senderId,
+      "Please provide an email or phone number and a person will reach out to you shortly."
+    );
   }
 
   // 4) pricing intent branch (exclude time questions)
@@ -138,16 +159,25 @@ const handleMessage = async (senderId, messageText) => {
   const isTimeQuestion  = /\btime\b/.test(raw);
   if (isPriceQuestion && !isTimeQuestion) {
     if (text.includes('fence')) {
-      return sendText(senderId, "Fence repairs start at a $849 minimum. For an exact estimate we offer a free consultation—would you like our booking link?");
+      return sendText(
+        senderId,
+        "Fence repairs start at a $849 minimum. For an exact estimate we offer a free consultation—would you like our booking link?"
+      );
     } else {
-      return sendText(senderId, "Pricing varies based on project specifics. We offer a free, no-obligation consultation to give you an accurate quote—shall I send you our booking link?");
+      return sendText(
+        senderId,
+        "Pricing varies based on project specifics. We offer a free, no-obligation consultation to give you an accurate quote—shall I send you our booking link?"
+      );
     }
   }
 
   // 5) no state yet? try service + intent pre-selection
   if (!state.step) {
-    let service = getBestMatch(text, SERVICE_KEYWORDS) || SERVICE_KEYWORDS.find(k => text.includes(k));
-    let intent  = getBestMatch(text, ['repair','replace'])  || ['repair','replace'].find(w => text.includes(w));
+    let service = getBestMatch(text, SERVICE_KEYWORDS)
+               || SERVICE_KEYWORDS.find(k => text.includes(k));
+    let intent  = getBestMatch(text, ['repair','replace','fix'])
+               || ['repair','replace','fix'].find(w => text.includes(w));
+    if (intent === 'fix') intent = 'repair';
 
     if (service) {
       const newState = { step: 'ask_zip', preselectedService: service };
@@ -161,18 +191,27 @@ const handleMessage = async (senderId, messageText) => {
       userState[senderId] = newState;
       return sendText(senderId, prompt);
     } else {
-      return sendText(senderId, `Sorry, we don’t currently offer “${messageText.trim()}.”`);
+      return sendText(
+        senderId,
+        `Sorry, we don’t currently offer “${messageText.trim()}.”`
+      );
     }
   }
 
   // 6) ZIP code step
   if (state.step === 'ask_zip') {
     if (!/^\d{5}$/.test(text)) {
-      return sendText(senderId, "Please send a valid 5-digit ZIP code so I can check if we serve your area.");
+      return sendText(
+        senderId,
+        "Please send a valid 5-digit ZIP code so I can check if we serve your area."
+      );
     }
     if (!validZipCodes.has(text)) {
       delete userState[senderId];
-      return sendText(senderId, "Unfortunately, we’re not servicing that area right now. Check back soon!");
+      return sendText(
+        senderId,
+        "Unfortunately, we’re not servicing that area right now. Check back soon!"
+      );
     }
 
     const svc    = state.preselectedService;
@@ -183,16 +222,25 @@ const handleMessage = async (senderId, messageText) => {
       if (intent === 'repair') {
         if (svc === 'fence') {
           userState[senderId] = { step: 'fence_repair_confirm', zip: text, service: svc };
-          return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
+          return sendText(
+            senderId,
+            "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)"
+          );
         } else {
           delete userState[senderId];
-          return sendText(senderId, `Unfortunately, we do not offer ${svc} repairs at this time.`);
+          return sendText(
+            senderId,
+            `Unfortunately, we do not offer ${svc} repairs at this time.`
+          );
         }
       }
       if (intent === 'replace') {
         if (svc === 'roofing') {
           userState[senderId] = { step: 'roof_type', zip: text, service: svc };
-          return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
+          return sendText(
+            senderId,
+            "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)"
+          );
         } else {
           return sendBookingButton(senderId);
         }
@@ -202,13 +250,18 @@ const handleMessage = async (senderId, messageText) => {
 
     // standard flow: ask repair or replace
     userState[senderId] = { step: 'repair_replace', zip: text, service: svc };
-    return sendText(senderId, `Perfect! Are you looking to repair or replace your ${svc}?`);
+    return sendText(
+      senderId,
+      `Perfect! Are you looking to repair or replace your ${svc}?`
+    );
   }
 
   // 7) main conversation flow
   switch (state.step) {
     case 'repair_replace': {
-      const intent = getBestMatch(text, ['repair', 'replace']);
+      let intent = getBestMatch(text, ['repair','replace','fix'])
+                  || ['repair','replace','fix'].find(w => text.includes(w));
+      if (intent === 'fix') intent = 'repair';
       if (!intent) return sendText(senderId, "Please type either 'repair' or 'replace'.");
 
       const { service } = state;
@@ -217,15 +270,24 @@ const handleMessage = async (senderId, messageText) => {
       if (intent === 'repair') {
         if (service === 'fence') {
           userState[senderId] = { ...nextState, step: 'fence_repair_confirm' };
-          return sendText(senderId, "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)");
+          return sendText(
+            senderId,
+            "Fence repairs start at a $849 minimum. Would you like to proceed? (Yes/No)"
+          );
         } else {
           delete userState[senderId];
-          return sendText(senderId, `Unfortunately, we do not offer ${service} repairs at this time.`);
+          return sendText(
+            senderId,
+            `Unfortunately, we do not offer ${service} repairs at this time.`
+          );
         }
-      } else {
+      } else { // replace
         if (service === 'roofing') {
           userState[senderId] = { ...nextState, step: 'roof_type' };
-          return sendText(senderId, "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)");
+          return sendText(
+            senderId,
+            "What type of roofing material are you looking for? (Asphalt, Metal, Cedar Shingles)"
+          );
         } else {
           return sendBookingButton(senderId);
         }
@@ -233,11 +295,8 @@ const handleMessage = async (senderId, messageText) => {
     }
 
     case 'fence_repair_confirm': {
-      // first, catch any “yes” via interpretYesNo
       const decision = interpretYesNo(text);
-      // then also catch looser affirmations
       const affirmed = AFFIRMATION_PATTERNS.some(rx => rx.test(stripped));
-
       if (decision === 'yes' || affirmed) {
         return sendBookingButton(senderId);
       } else if (decision === 'no') {
@@ -255,21 +314,35 @@ const handleMessage = async (senderId, messageText) => {
       const roofType = getBestMatch(text, ['asphalt','metal','cedar shingle']);
       if (roofType === 'cedar shingle') {
         userState[senderId] = { ...state, step: 'cedar_reject' };
-        return sendText(senderId, "We currently don't offer cedar shingle installations, but we'd be happy to replace them with asphalt or metal roofing. Would you like to proceed? (Yes/No)");
+        return sendText(
+          senderId,
+          "We currently don't offer cedar shingle installations, but we'd be happy to replace them with asphalt or metal roofing. Would you like to proceed? (Yes/No)"
+        );
       }
       return sendBookingButton(senderId);
     }
 
     case 'cedar_reject': {
       const decision = interpretYesNo(text);
-      if (decision === 'yes')                  return sendBookingButton(senderId);
-      else if (decision === 'no') { delete userState[senderId]; return sendText(senderId, "No problem. Let us know if you ever need help with anything else!"); }
-      else                                     return sendText(senderId, "Would you like to move forward with asphalt or metal instead? (Yes/No)");
+      if (decision === 'yes') {
+        return sendBookingButton(senderId);
+      } else if (decision === 'no') {
+        delete userState[senderId];
+        return sendText(senderId, "No problem. Let us know if you ever need help with anything else!");
+      } else {
+        return sendText(
+          senderId,
+          "Would you like to move forward with asphalt or metal instead? (Yes/No)"
+        );
+      }
     }
 
     default:
       delete userState[senderId];
-      return sendText(senderId, "Oops, something went wrong. Let's start over—what service can I help you with?");
+      return sendText(
+        senderId,
+        "Oops, something went wrong. Let's start over—what service can I help you with?"
+      );
   }
 };
 
@@ -315,5 +388,3 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-
