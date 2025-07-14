@@ -89,11 +89,26 @@ const handleMessage = async (senderId, message) => {
     return sendText(senderId, 'Understood—closing chat.');
   }
 
-  // Greeting reset
+    // 0a) Greeting or greeting+service reset
   if (!state.step && GREETING_PATTERN.test(raw)) {
-    userState[senderId] = { step: 'ask_zip' };
-    return sendText(senderId, 'Hi! Please send your 5-digit ZIP code.');
+    // detect service and optional intent in the same greeting
+    let svc    = getBestMatch(raw, SERVICE_KEYWORDS)
+              || SERVICE_KEYWORDS.find(s => raw.includes(s));
+    let intent = getBestMatch(raw, ['repair','replace','fix'])
+              || ['repair','replace','fix'].find(w => raw.includes(w));
+    if (intent === 'fix') intent = 'repair';
+
+    const newState = { step: 'ask_zip' };
+    if (svc)     newState.preService = svc;
+    if (intent)  newState.preIntent  = intent;
+    userState[senderId] = newState;
+
+    const greetingText = svc
+      ? `Hi! You’d like to ${intent||'get'} your ${svc}. First, send your 5-digit ZIP code.`
+      : `Hi! Before we begin, send your 5-digit ZIP code so I can check our service area.`;
+    return sendText(senderId, greetingText);
   }
+
 
   // 1) Contact collection
   if (state.step === 'collect_contact') {
