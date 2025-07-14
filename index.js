@@ -15,6 +15,15 @@ const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutte
 const YES_NO_KEYWORDS = ['yes', 'no', 'yeah', 'ye', 'yup', 'ok', 'okay', 'sure', 'affirmative', 'nah', 'nope', 'negative'];
 const HUMAN_KEYWORDS = ['human', 'person', 'agent', 'representative'];
 const THANKS_REGEX = /^(thanks?|thank you|thx|ty)\b/;
+const REJECTION_PATTERNS = [
+  /\b(no[-\s]*thank(?:s| you))\b/,            // “no thank you”, “no-thanks”
+  /\b(no[-\s]*stop)\b/,                       // “no stop”
+  /\b(stop)\b/,                               // “stop”
+  /\b(exit|cancel|nevermind)\b/,              // basic terms
+  /\b(take me off (?:your|this) list(?:s)?)\b/,// “take me off your list(s)”
+  /\b(leave me (?:alone|off))\b/               // “leave me alone”
+];
+
 
 const userState = {};
 
@@ -140,6 +149,19 @@ const interpretYesNo = (input) => {
 };
 
 const handleMessage = async (senderId, messageText) => {
+  const raw = messageText.trim().toLowerCase();
+  const stripped = raw.replace(/[^\w\s]/g, ' ');
+
+  if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
+    delete userState[senderId];
+    return sendText(
+      senderId,
+      "Understood—I'll close this chat now. If you ever need us, just send a message. Take care!"
+    );
+  }
+
+
+  
   const text = messageText.trim().toLowerCase();
   const state = userState[senderId] || {};
 
@@ -166,15 +188,6 @@ const handleMessage = async (senderId, messageText) => {
     return sendText(
       senderId,
       "Please provide an email or phone number and a person will reach out to you shortly."
-    );
-  }
-
-  // 4) Exit flow
-  if (["exit", "cancel", "stop", "nevermind"].includes(text)) {
-    delete userState[senderId];
-    return sendText(
-      senderId,
-      "No problem! If you need anything in the future, just message us again. Take care!"
     );
   }
 
