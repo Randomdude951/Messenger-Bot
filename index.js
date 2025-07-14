@@ -89,7 +89,12 @@ const handleMessage = async (sid,message) => {
   // 6) ZIP validation
   if (state.step==='ask_zip'){
     if (!/^\d{5}$/.test(raw))return sendText(sid,'Please send a valid 5-digit ZIP code.');
-    if (!validZipCodes.has(raw)){delete userState[sid];return sendText(sid,'We’re not in your area yet.');}
+    if (!validZipCodes.has(raw)) {
+      // invalid ZIP: stay in ask_zip and preserve preService/preIntent
+      userState[sid] = { ...state, step: 'ask_zip' };
+      return sendText(sid,
+        "We’re not in your area yet. If that was a typo, please send the correct 5-digit ZIP code."
+      );');}
     const {preService,preIntent}=state;
     if (!preService){userState[sid]={step:'initial',zip:raw};return sendText(sid,'What service do you need?');}
     if (preIntent==='repair'){if(preService==='fence'){userState[sid]={step:'fence_confirm',service:'fence'};return sendText(sid,'Fence repairs start at $849 – proceed? (Yes/No)');}delete userState[sid];return sendText(sid,`We don't repair ${preService}.`);}    
