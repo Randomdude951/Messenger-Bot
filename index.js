@@ -17,9 +17,13 @@ const YES_NO_KEYWORDS = ['yes','no','yeah','ye','yup','ok','okay','sure','affirm
 const HUMAN_KEYWORDS = ['human','person','agent','representative'];
 const THANKS_REGEX = /^(thanks?|thank you|thx|ty)\b/;
 const REJECTION_PATTERNS = [
-  /\b(no[-\s]*thank(?:s| you))\b/, /\b(no[-\s]*stop)\b/, /\b(stop)\b/,
-  /\b(exit|cancel|nevermind)\b/, /\b(take me off (?:your|this) list(?:s)?)\b/,
-  /\b(leave me (?:alone|off))\b/
+  /\b(no[-\s]*thank(?:s| you))\b/,
+  /\b(no[-\s]*stop)\b/,
+  /\b(stop)\b/,
+  /\b(exit|cancel|nevermind)\b/,
+  /\b(take me off (?:your|this) list(?:s)?)\b/,
+  /\b(leave me (?:alone|off))\b/,
+  /\bno more\b/            // ← catch “no more” too
 ];
 const PRICE_PATTERNS = [
   /\bhow much\b.*\b(?:cost|price)\b/,
@@ -106,7 +110,7 @@ const handleMessage = async (sid, message) => {
   // 0) Exit / rejection
   if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
     delete userState[sid];
-    return sendText(sid, 'Understood— I\'ll close this chat now. If you ever need us just send a message. Take care!');
+    return;
   }
 
   // 0a) Greeting with optional pre-service and pre-intent
