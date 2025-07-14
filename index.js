@@ -280,9 +280,9 @@ const handleMessage = async (sid, message) => {
       if (dec === 'yes' || aff) return sendBookingButton(sid);
       if (dec === 'no') {
         delete userState[sid];
-        return sendText(sid, 'No worries!');
+        return sendText(sid, 'No worries! If you change your mind or need anything else just send us a message. Take care!');
       }
-      return sendText(sid, 'Proceed with $849 fence repair? (Yes/No)');
+      return sendText(sid, 'Proceed with $849+ fence repair? (Yes/No)');
     }
 
     case 'roof_type': {
