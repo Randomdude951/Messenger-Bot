@@ -94,6 +94,10 @@ const handleMessage = async (sid,message) => {
       userState[sid] = { ...state, step: 'ask_zip' };
       return sendText(sid,
         "We’re not in your area yet. If that was a typo, please send the correct 5-digit ZIP code."
+      );
+    }
+      return sendText(sid,
+        "We’re not in your area yet. If that was a typo, please send the correct 5-digit ZIP code."
       );');}
     const {preService,preIntent}=state;
     if (!preService){userState[sid]={step:'initial',zip:raw};return sendText(sid,'What service do you need?');}
