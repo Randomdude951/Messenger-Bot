@@ -125,14 +125,15 @@ const handleMessage = async (senderId, message) => {
   // 5) Pre-service selection
   if (!state.step) {
     let service = getBestMatch(raw, SERVICE_KEYWORDS) || SERVICE_KEYWORDS.find(s => raw.includes(s));
-    let intent = getBestMatch(raw, ['repair','replace','fix']);
+    let intent = getBestMatch(raw, ['repair','replace','fix', 'new']);
     if (!intent) intent = ['repair','replace','fix'].find(w => raw.includes(w));
     if (intent === 'fix') intent = 'repair';
+    if (intent === 'new') intent = 'replace';
 
     if (service) {
       userState[senderId] = { step: 'ask_zip', preService: service, preIntent: intent };
-      const prefix = intent ? `Got it—you want to ${intent} your ${service}.` : `Great—you’re interested in ${service}.`;
-      return sendText(senderId, `${prefix} Please send your 5-digit ZIP code.`);
+      const prefix = intent ? `Great!` : `Great!`;
+      return sendText(senderId, `${prefix} To see if we service your area, please send your 5-digit ZIP code.`);
     }
 
     return sendText(senderId, `Sorry, we don't offer "${message}".`);
@@ -150,7 +151,7 @@ const handleMessage = async (senderId, message) => {
     if (preIntent === 'repair') {
       if (preService === 'fence') userState[senderId] = { step: 'fence_confirm', service: preService };
       else { delete userState[senderId]; return sendText(senderId, `We don't repair ${preService}.`); }
-      return sendText(senderId, 'Fence repairs start at $849 – proceed? (Yes/No)');
+      return sendText(senderId, 'Fence repairs start at $849 – proceed?');
     }
     if (preIntent === 'replace') {
       if (preService === 'roofing') { userState[senderId] = { step: 'roof_type', service: 'roofing' }; return sendText(senderId, 'Which roofing material?'); }
