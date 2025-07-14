@@ -26,9 +26,7 @@ const PRICE_PATTERNS = [
   /\bwhat(?:'s| is)\s+(?:the\s*)?(?:cost|price)\b/,
   /\b(?:cost|price)\b/
 ];
-const AFFIRMATION_PATTERNS = [
-  /\b(fine|sounds good|works for me|that's fine|thats fine)\b/
-];
+const AFFIRMATION_PATTERNS = [ /\b(fine|sounds good|works for me|that's fine|thats fine)\b/ ];
 const GREETING_PATTERN = /\b(hi|hello|hey)\b/;
 
 // State and ZIP codes
@@ -113,16 +111,18 @@ const handleMessage = async (sid, message) => {
 
   // 0a) Greeting with optional pre-service and pre-intent
   if (!state.step && GREETING_PATTERN.test(raw)) {
-    let svc = getBestMatch(raw, SERVICE_KEYWORDS) || SERVICE_KEYWORDS.find(s => raw.includes(s));
+    let svc = getBestMatch(raw, SERVICE_KEYWORDS) ||
+              SERVICE_KEYWORDS.find(s => raw.includes(s));
     let intent =
       getBestMatch(raw, ['repair', 'replace', 'fix']) ||
       ['repair', 'replace', 'fix'].find(w => raw.includes(w));
     if (intent === 'fix') intent = 'repair';
 
-    const ns = { step: 'ask_zip' };
-    if (svc) ns.preService = svc;
-    if (intent) ns.preIntent = intent;
-    userState[sid] = ns;
+    userState[sid] = {
+      step: 'ask_zip',
+      preService: svc,
+      preIntent: intent
+    };
 
     const greet = svc
       ? `Hi! You’d like to ${intent || 'get'} your ${svc}. Please send your 5-digit ZIP code.`
@@ -166,14 +166,19 @@ const handleMessage = async (sid, message) => {
 
   // 5) Pre-selection if no state yet
   if (!state.step) {
-    let svc = getBestMatch(raw, SERVICE_KEYWORDS) || SERVICE_KEYWORDS.find(s => raw.includes(s));
+    let svc = getBestMatch(raw, SERVICE_KEYWORDS) ||
+              SERVICE_KEYWORDS.find(s => raw.includes(s));
     let intent =
       getBestMatch(raw, ['repair', 'replace', 'fix']) ||
       ['repair', 'replace', 'fix'].find(w => raw.includes(w));
     if (intent === 'fix') intent = 'repair';
 
     if (svc) {
-      userState[sid] = { step: 'ask_zip', preService: svc, preIntent: intent };
+      userState[sid] = {
+        step: 'ask_zip',
+        preService: svc,
+        preIntent: intent
+      };
       const pfx = intent
         ? `Got it—you want to ${intent} your ${svc}.`
         : `Great—you’re interested in ${svc}.`;
@@ -183,35 +188,49 @@ const handleMessage = async (sid, message) => {
     return sendText(sid, `Sorry, we don't offer "${message}".`);
   }
 
-  // 6) ZIP validation
+  // 6) ZIP validation (extract digits anywhere)
   if (state.step === 'ask_zip') {
-    if (!/^\d{5}$/.test(raw)) {
+    const zipMatch = raw.match(/\b(\d{5})\b/);
+    if (!zipMatch) {
       return sendText(sid, 'Please send a valid 5‑digit ZIP code.');
     }
-    if (!validZipCodes.has(raw)) {
-      // invalid ZIP: stay in ask_zip
+    const zip = zipMatch[1];
+    if (!validZipCodes.has(zip)) {
       userState[sid] = { ...state, step: 'ask_zip' };
       return sendText(sid, 'We are not in your area yet.');
     }
 
     // ZIP is valid
     const { preService, preIntent } = state;
+    // remember zip if needed
+    state.zip = zip;
+
     if (preService) {
-      // skip to repair/replace
-      userState[sid] = {
-        step: 'repair_replace',
-        zip: raw,
-        service: preService
-      };
-      return sendText(sid, `Perfect! Are you looking to repair or replace your ${preService}?`);
-    } else {
-      // normal flow
-      userState[sid] = { step: 'initial', zip: raw };
-      return sendText(
-        sid,
-        'Great! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)'
-      );
+      // skip straight to the correct branch based on preIntent
+      if (preIntent === 'repair') {
+        if (preService === 'fence') {
+          userState[sid] = { step: 'fence_confirm', service: 'fence', zip };
+          return sendText(sid, 'Fence repairs start at $849 – proceed? (Yes/No)');
+        } else {
+          delete userState[sid];
+          return sendText(sid, `We don't repair ${preService}.`);
+        }
+      }
+      if (preIntent === 'replace') {
+        if (preService === 'roofing') {
+          userState[sid] = { step: 'roof_type', service: 'roofing', zip };
+          return sendText(sid, 'Which roofing material? (Asphalt, Metal, Cedar Shingle)');
+        }
+        return sendBookingButton(sid);
+      }
     }
+
+    // no preIntent: normal flow
+    userState[sid] = { step: 'initial', zip };
+    return sendText(
+      sid,
+      'Great! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)'
+    );
   }
 
   // 7) Main conversation branches
@@ -229,8 +248,9 @@ const handleMessage = async (sid, message) => {
     }
 
     case 'repair_replace': {
-      let intent = getBestMatch(raw, ['repair', 'replace', 'fix']) ||
-                   ['repair', 'replace', 'fix'].find(w => raw.includes(w));
+      let intent =
+        getBestMatch(raw, ['repair', 'replace', 'fix']) ||
+        ['repair', 'replace', 'fix'].find(w => raw.includes(w));
       if (intent === 'fix') intent = 'repair';
       if (!intent) {
         return sendText(sid, "Type 'repair' or 'replace'.");
@@ -239,8 +259,8 @@ const handleMessage = async (sid, message) => {
       const svc = state.service;
       if (intent === 'repair') {
         if (svc === 'fence') {
-          userState[sid] = { step: 'fence_confirm', service: 'fence' };
-          return sendText(sid, 'Fence repairs start at $849 – proceed? (Yes/No)');
+          userState[sid] = { step: 'fence_confirm', service: 'fence', zip: state.zip };
+          return sendText(sid, 'Fence repairs start at $849 – proceed? (Yes/No)');
         }
         delete userState[sid];
         return sendText(sid, `We don't repair ${svc}.`);
@@ -248,7 +268,7 @@ const handleMessage = async (sid, message) => {
 
       // replace
       if (svc === 'roofing') {
-        userState[sid] = { step: 'roof_type', service: 'roofing' };
+        userState[sid] = { step: 'roof_type', service: 'roofing', zip: state.zip };
         return sendText(sid, 'Which roofing material? (Asphalt, Metal, Cedar Shingle)');
       }
       return sendBookingButton(sid);
@@ -268,7 +288,7 @@ const handleMessage = async (sid, message) => {
     case 'roof_type': {
       const mat = getBestMatch(raw, ['asphalt', 'metal', 'cedar shingle']);
       if (mat === 'cedar shingle') {
-        userState[sid] = { step: 'cedar_reject' };
+        userState[sid] = { step: 'cedar_reject', zip: state.zip };
         return sendText(
           sid,
           "We don’t offer cedar; proceed with asphalt or metal? (Yes/No)"
