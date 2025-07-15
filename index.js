@@ -15,6 +15,7 @@ app.use(bodyParser.json());
 const SERVICE_KEYWORDS = ['fence', 'deck', 'windows', 'doors', 'roofing', 'gutters'];
 const YES_NO_KEYWORDS = ['yes','no','yeah','ye','yup','ok','okay','sure','affirmative','nah','nope','negative'];
 const HUMAN_KEYWORDS = ['human','person','agent','representative'];
+const CONTACT_KEYWORDS = ['contact','support','help','phone','email'];
 const THANKS_REGEX = /^(thanks?|thank you|thx|ty)\b/;
 const REJECTION_PATTERNS = [
   /\b(no[-\s]*thank(?:s| you))\b/,
@@ -106,6 +107,16 @@ const handleMessage = async (sid, message) => {
   const raw = message.trim().toLowerCase();
   const stripped = raw.replace(/[^\w\s]/g, ' ');
   let state = userState[sid] || {};
+
+  // 0) Direct contact‐info requests
+if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
+  delete userState[sid];
+  return sendText(
+    sid,
+    "We can be reached at (360) 506-2071. You can also send an email to ffextsolutions@gmail.com with any questions or inquiries."
+  );
+}
+
 
   // 0) Exit / rejection
   if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
