@@ -189,7 +189,12 @@ const handleMessage = async (sid, message) => {
       return sendText(sid, `${pfx} Please send your 5-digit ZIP code.`);
     }
 
-    return sendText(sid, `Sorry, we don't offer "${message}".`);
+     // NEW fallback: reset to asking for service
+      userState[sid] = { step: 'initial', zip: state.zip };
+      return sendText(
+        sid,
+        'Hi! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)'
+      );
   }
 
   // 6) ZIP validation (extract digits anywhere)
