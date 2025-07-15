@@ -24,7 +24,7 @@ const REJECTION_PATTERNS = [
   /\b(exit|cancel|nevermind)\b/,
   /\b(take me off (?:your|this) list(?:s)?)\b/,
   /\b(leave me (?:alone|off))\b/,
-  /\bno more\b/            // ← catch “no more” too
+  /\bno more\b/
 ];
 const PRICE_PATTERNS = [
   /\bhow much\b.*\b(?:cost|price)\b/,
@@ -75,11 +75,7 @@ const sendBookingButton = async sid => {
               template_type: 'button',
               text: 'Perfect! Click below to book your free consultation.',
               buttons: [
-                {
-                  type: 'web_url',
-                  url: 'https://www.ffexteriorsolutions.com/book-online',
-                  title: '📅 Book Now'
-                }
+                { type: 'web_url', url: 'https://www.ffexteriorsolutions.com/book-online', title: '📅 Book Now' }
               ]
             }
           }
@@ -109,22 +105,21 @@ const handleMessage = async (sid, message) => {
   let state = userState[sid] || {};
 
   // 0) Direct contact‐info requests
-if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
-  delete userState[sid];
-  return sendText(
-    sid,
-    "We can be reached at (360) 506-2071. You can also send an email to ffextsolutions@gmail.com with any questions or inquiries."
-  );
-}
+  if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
+    delete userState[sid];
+    return sendText(
+      sid,
+      "We can be reached at (360) 506-2071. You can also email ffextsolutions@gmail.com with any questions."
+    );
+  }
 
-
-  // 0) Exit / rejection
+  // 1) Exit / rejection — silently swallow
   if (REJECTION_PATTERNS.some(rx => rx.test(stripped))) {
     delete userState[sid];
     return;
   }
 
-  // 0a) Greeting with optional pre-service and pre-intent
+  // 2) Greeting with optional pre-service and pre-intent
   if (!state.step && GREETING_PATTERN.test(raw)) {
     let svc = getBestMatch(raw, SERVICE_KEYWORDS) ||
               SERVICE_KEYWORDS.find(s => raw.includes(s));
@@ -133,19 +128,14 @@ if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
       ['repair', 'replace', 'fix'].find(w => raw.includes(w));
     if (intent === 'fix') intent = 'repair';
 
-    userState[sid] = {
-      step: 'ask_zip',
-      preService: svc,
-      preIntent: intent
-    };
-
-    const greet = svc
-      ? `Please send your 5-digit ZIP code so I can check if you're in our area.`
-      : `Hi! Please send your 5-digit ZIP code so I can check if you're in our area.`;
-    return sendText(sid, greet);
+    userState[sid] = { step: 'ask_zip', preService: svc, preIntent: intent };
+    return sendText(
+      sid,
+      'Please send your 5-digit ZIP code so I can check if you\'re in our area.'
+    );
   }
 
-  // 1) Contact collection after human handoff
+  // 3) Contact collection after human handoff
   if (state.step === 'collect_contact') {
     if (!THANKS_REGEX.test(raw)) {
       await sendText(sid, 'Thank you! Someone will reach out shortly.');
@@ -154,7 +144,7 @@ if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
     return;
   }
 
-  // 2) Post-handoff: ignore one "thanks", then reset and reprocess
+  // 4) Post-handoff: ignore one "thanks", then reset and reprocess
   if (state.step === 'handoff_done') {
     if (!THANKS_REGEX.test(raw)) {
       delete userState[sid];
@@ -163,13 +153,13 @@ if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
     return;
   }
 
-  // 3) Human handoff trigger
+  // 5) Human handoff trigger
   if (HUMAN_KEYWORDS.some(k => raw.includes(k))) {
     userState[sid] = { step: 'collect_contact', zip: state.zip };
     return sendText(sid, 'Please share your email or phone number, and we’ll contact you soon.');
   }
 
-  // 4) Pricing inquiries
+  // 6) Pricing inquiries
   const isPrice = PRICE_PATTERNS.some(rx => rx.test(raw));
   const isTime = /\btime\b/.test(raw);
   if (isPrice && !isTime) {
@@ -179,7 +169,7 @@ if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
     return sendText(sid, 'Pricing varies—shall I send consultation link?');
   }
 
-  // 5) Pre-selection if no state yet
+  // 7) Pre-selection if no state yet
   if (!state.step) {
     let svc = getBestMatch(raw, SERVICE_KEYWORDS) ||
               SERVICE_KEYWORDS.find(s => raw.includes(s));
@@ -189,26 +179,22 @@ if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
     if (intent === 'fix') intent = 'repair';
 
     if (svc) {
-      userState[sid] = {
-        step: 'ask_zip',
-        preService: svc,
-        preIntent: intent
-      };
+      userState[sid] = { step: 'ask_zip', preService: svc, preIntent: intent };
       const pfx = intent
         ? `Got it—you want to ${intent} your ${svc}.`
         : `Great—you’re interested in ${svc}.`;
       return sendText(sid, `${pfx} Please send your 5-digit ZIP code.`);
     }
 
-     // NEW fallback: reset to asking for service
-      userState[sid] = { step: 'initial', zip: state.zip };
-      return sendText(
-        sid,
-        'Hi! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)'
-      );
+    // fallback: prompt service choice
+    userState[sid] = { step: 'initial', zip: state.zip };
+    return sendText(
+      sid,
+      'Hi! What type of service are you looking for? (Fence, Deck, Windows, Doors, Roofing, Gutters)'
+    );
   }
 
-  // 6) ZIP validation (extract digits anywhere)
+  // 8) ZIP validation (extract digits anywhere)
   if (state.step === 'ask_zip') {
     const zipMatch = raw.match(/\b(\d{5})\b/);
     if (!zipMatch) {
@@ -220,32 +206,38 @@ if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
       return sendText(sid, 'We are not in your area yet.');
     }
 
-    // ZIP is valid
-    const { preService, preIntent } = state;
-    // remember zip if needed
+    // ZIP is valid—remember it
+    const service = state.preService;
+    let intent = state.preIntent;
     state.zip = zip;
 
-    if (preService) {
-      // skip straight to the correct branch based on preIntent
-      if (preIntent === 'repair') {
-        if (preService === 'fence') {
-          userState[sid] = { step: 'fence_confirm', service: 'fence', zip };
+    // **NEW**: if fence + no intent, ask repair vs replace
+    if (service === 'fence' && !intent) {
+      userState[sid] = { step: 'repair_replace', service: 'fence', zip };
+      return sendText(sid, 'You mentioned a fence—are you looking to repair or replace it?');
+    }
+
+    // otherwise if service but no intent, default to replace
+    if (service) {
+      if (!intent) intent = 'replace';
+
+      if (intent === 'repair') {
+        if (service === 'fence') {
+          userState[sid] = { step: 'fence_confirm', service, zip };
           return sendText(sid, 'Fence repairs start at $849 – proceed?');
-        } else {
-          delete userState[sid];
-          return sendText(sid, `We don't repair ${preService}.`);
         }
-      }
-      if (preIntent === 'replace') {
-        if (preService === 'roofing') {
-          userState[sid] = { step: 'roof_type', service: 'roofing', zip };
+        delete userState[sid];
+        return sendText(sid, `We don't repair ${service}.`);
+      } else {
+        if (service === 'roofing') {
+          userState[sid] = { step: 'roof_type', service, zip };
           return sendText(sid, 'Which roofing material? (Asphalt, Metal, Cedar Shingle)');
         }
         return sendBookingButton(sid);
       }
     }
 
-    // no preIntent: normal flow
+    // no preService: normal next step
     userState[sid] = { step: 'initial', zip };
     return sendText(
       sid,
@@ -253,7 +245,7 @@ if (CONTACT_KEYWORDS.some(k => raw.includes(k))) {
     );
   }
 
-  // 7) Main conversation branches
+  // 9) Main conversation branches
   switch (state.step) {
     case 'initial': {
       const service = getBestMatch(raw, SERVICE_KEYWORDS);
