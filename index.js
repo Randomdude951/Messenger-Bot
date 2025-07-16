@@ -181,8 +181,8 @@ const handleMessage = async (sid, message) => {
     if (svc) {
       userState[sid] = { step: 'ask_zip', preService: svc, preIntent: intent };
       const pfx = intent
-        ? `Got it—you want to ${intent} your ${svc}.`
-        : `Great—you’re interested in ${svc}.`;
+        ? `Got it!.`
+        : `Great!.`;
       return sendText(sid, `${pfx} Please send your 5-digit ZIP code.`);
     }
 
@@ -203,7 +203,7 @@ const handleMessage = async (sid, message) => {
     const zip = zipMatch[1];
     if (!validZipCodes.has(zip)) {
       userState[sid] = { ...state, step: 'ask_zip' };
-      return sendText(sid, 'We are not in your area yet.');
+      return sendText(sid, 'Unfortunately, we don\'t service your area yet.');
     }
 
     // ZIP is valid—remember it
@@ -303,7 +303,7 @@ const handleMessage = async (sid, message) => {
         userState[sid] = { step: 'cedar_reject', zip: state.zip };
         return sendText(
           sid,
-          "We don’t offer cedar; proceed with asphalt or metal? (Yes/No)"
+          "Unfortunately, we don’t offer cedar. Would you like to proceed with asphalt or metal? (Yes/No)"
         );
       }
       return sendBookingButton(sid);
@@ -348,7 +348,7 @@ app.post('/webhook', async (req, res) => {
 
     if (msg.postback?.payload === 'GET_STARTED') {
       userState[sid] = { step: 'ask_zip' };
-      await sendText(sid, 'Hi! Send your 5-digit ZIP code.');
+      await sendText(sid, 'Hi! Please send your 5-digit ZIP code.');
       continue;
     }
 
