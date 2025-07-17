@@ -24,7 +24,12 @@ const REJECTION_PATTERNS = [
   /\b(exit|cancel|nevermind)\b/,
   /\b(take me off (?:your|this) list(?:s)?)\b/,
   /\b(leave me (?:alone|off))\b/,
-  /\bno more\b/
+  /\bno more\b/,
+  /\b(exit|cancel|nevermind|stop)\b/i,
+  /\b(take me off (?:your|this) list(?:s)?)\b/i,
+  /\b(leave me (?:alone|off))\b/i,
+  /\bno more\b/i,
+  /\b(not\s+interested|not\s+now|not\s+looking|no\s+thanks?|no\s+thank\s+you|nah\s*(i'?m)?\s*good|maybe\s+later|i'?m\s+all\s+set)\b/i
 ];
 const PRICE_PATTERNS = [
   /\bhow much\b.*\b(?:cost|price)\b/,
